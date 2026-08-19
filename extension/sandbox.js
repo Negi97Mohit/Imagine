@@ -33,6 +33,11 @@
   }
 
   function reportError(message, err) {
+    const badge = document.getElementById("error-badge");
+    if (badge) {
+      badge.style.display = "block";
+      badge.textContent = `⚠️ ${String(message || "Interaction error").slice(0, 50)}`;
+    }
     parent.postMessage(
       {
         source: "locked-image-sandbox",
@@ -53,25 +58,49 @@
   // the vast majority of interactions render correctly either way. Only
   // report an error if the image genuinely can't be fetched at all.
   function loadBoundImage(url, gen, onReady) {
-    const tryLoad = (useCors) => {
+    const tryLoad = (srcUrl, isDataUrl) => {
       const candidate = new Image();
-      if (useCors) candidate.crossOrigin = "anonymous";
+      if (!isDataUrl && !srcUrl.startsWith("data:")) candidate.crossOrigin = "anonymous";
       candidate.onload = () => {
         if (gen !== initGen) return;
         onReady(candidate);
       };
       candidate.onerror = () => {
         if (gen !== initGen) return;
-        if (useCors) {
-          tryLoad(false);
+        if (!isDataUrl && !srcUrl.startsWith("data:")) {
+          // Request privileged CORS-clean data URL from background worker
+          const requestId = nextRequestId();
+          pendingStorageRequests.set(requestId, {
+            resolve: (cleanDataUrl) => {
+              if (cleanDataUrl && gen === initGen) tryLoad(cleanDataUrl, true);
+              else tryFallback();
+            },
+            reject: () => tryFallback(),
+          });
+          parent.postMessage(
+            { source: "locked-image-sandbox", type: "FETCH_IMAGE_DATA_URL", requestId, url },
+            "*"
+          );
         } else {
-          reportError("Image failed to load — check the URL: " + url);
-          onReady(candidate); // let the interaction run anyway; some don't need pixels
+          tryFallback();
         }
       };
-      candidate.src = url;
+      candidate.src = srcUrl;
     };
-    tryLoad(true);
+
+    const tryFallback = () => {
+      const plain = new Image();
+      plain.onload = () => { if (gen === initGen) onReady(plain); };
+      plain.onerror = () => {
+        if (gen === initGen) {
+          reportError("Image failed to load — check the URL: " + url);
+          onReady(plain);
+        }
+      };
+      plain.src = url;
+    };
+
+    tryLoad(url, false);
   }
 
   // Catches errors thrown asynchronously inside a user interaction (e.g.
@@ -186,11 +215,17 @@
       bindingId = msg.bindingId || null;
       resizeTo(msg.width, msg.height);
 
+      const loadingBar = document.getElementById("loading-bar");
+      if (loadingBar) loadingBar.classList.remove("hidden");
+      const badge = document.getElementById("error-badge");
+      if (badge) badge.style.display = "none";
+
       const gen = ++initGen;
       loadBoundImage(msg.imageUrl, gen, (loadedImg) => {
         if (gen !== initGen) return; // a newer INIT has already superseded this one
         img = loadedImg;
         handle = runInteraction(msg.interaction, msg.config);
+        if (loadingBar) loadingBar.classList.add("hidden");
       });
     }
 
@@ -237,10 +272,11 @@
   // The iframe is sized/positioned to sit exactly on top of the bound
   // image, so a real pointerleave fires here the instant the cursor exits
   // those bounds — tell the host page (content script) to tear it down.
-  function notifyLeave() {
+  function notifyLeave(e) {
+    if (e && e.relatedTarget) return; // Moving inside document, do not leave
     parent.postMessage({ source: "locked-image-sandbox", type: "LEAVE" }, "*");
   }
-  document.addEventListener("pointerleave", notifyLeave);
+  document.documentElement.addEventListener("pointerleave", notifyLeave);
   document.addEventListener("pointercancel", notifyLeave);
 
   parent.postMessage({ source: "locked-image-sandbox", type: "READY" }, "*");

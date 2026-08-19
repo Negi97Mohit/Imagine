@@ -92,7 +92,7 @@ const AssetOverlay = (() => {
       "position:fixed;width:24px;height:24px;border-radius:50%;" +
         "background:#b8410e;color:#ffffff;display:flex;align-items:center;" +
         "justify-content:center;font-size:16px;font-weight:700;cursor:pointer;pointer-events:auto;" +
-        "opacity:0;transition:opacity 0.15s ease, transform 0.15s ease;box-shadow:0 2px 6px rgba(0,0,0,0.4);" +
+        "opacity:0.85;transition:opacity 0.15s ease, transform 0.15s ease;box-shadow:0 2px 8px rgba(0,0,0,0.45);" +
         "user-select:none;z-index:2147483647;"
     );
     pin.textContent = "+";
@@ -311,9 +311,9 @@ const AssetOverlay = (() => {
             if (e.target.tagName === "BUTTON") return;
             e.stopPropagation();
             activeBinding = b.interaction;
+            closeMenu();
             deactivateSandbox();
             activateSandbox();
-            closeMenu();
           };
 
           menuEl.appendChild(row);
@@ -363,9 +363,9 @@ const AssetOverlay = (() => {
             noticeEl.style.color = "#1e40af";
             noticeEl.style.display = "block";
             activeBinding = existing.interaction;
+            closeMenu();
             deactivateSandbox();
             activateSandbox();
-            highlightMatchingRow(existing.pushId);
             return;
           } else {
             noticeEl.innerHTML = `⚠️ <b>"${candidateName}"</b> has already been applied to this image by another user.<br><span style="font-size:9px;color:#7f1d1d;">See the highlighted item above in Active Interactions.</span>`;
@@ -381,9 +381,9 @@ const AssetOverlay = (() => {
 
         // 2. Not duplicate -> activate immediately for creator and bind in background
         activeBinding = candidate;
+        closeMenu();
         deactivateSandbox();
         activateSandbox();
-        closeMenu();
 
         if (onBindInteraction) {
           const res = await onBindInteraction(candidate);
@@ -521,6 +521,25 @@ const AssetOverlay = (() => {
             "*"
           );
         }
+        if (msg.type === "FETCH_IMAGE_DATA_URL") {
+          chrome.runtime.sendMessage(
+            { type: "FETCH_IMAGE_DATA_URL", url: msg.url },
+            (res) => {
+              if (overlayIframe?.contentWindow) {
+                overlayIframe.contentWindow.postMessage(
+                  {
+                    source: "locked-image-host",
+                    type: "STORAGE_RESULT",
+                    requestId: msg.requestId,
+                    ok: res && res.ok,
+                    value: res?.dataUrl,
+                  },
+                  "*"
+                );
+              }
+            }
+          );
+        }
         if (msg.type === "LEAVE") {
           deactivateSandbox();
         }
@@ -540,21 +559,29 @@ const AssetOverlay = (() => {
       const r = rect();
       if (isTooSmall(r)) return;
       pin.style.opacity = "1";
+      pin.style.transform = "scale(1.15)";
       activateSandbox();
     });
     img.addEventListener("pointerleave", (e) => {
-      // Keep pin visible if moving to pin or menu
-      if (!menuEl) pin.style.opacity = "0";
+      if (!menuEl) {
+        pin.style.opacity = "0.85";
+        pin.style.transform = "scale(1)";
+      }
     });
     pin.addEventListener("pointerenter", () => {
       pin.style.opacity = "1";
+      pin.style.transform = "scale(1.15)";
     });
     pin.addEventListener("pointerleave", () => {
-      if (!menuEl) pin.style.opacity = "0";
+      if (!menuEl) {
+        pin.style.opacity = "0.85";
+        pin.style.transform = "scale(1)";
+      }
     });
 
     window.addEventListener("scroll", onScrollOrResize, { passive: true, capture: true });
-    window.addEventListener("resize", onScrollOrResize);
+    document.addEventListener("scroll", onScrollOrResize, { passive: true, capture: true });
+    window.addEventListener("resize", onScrollOrResize, { passive: true });
     syncRect();
 
     return {
@@ -564,6 +591,7 @@ const AssetOverlay = (() => {
           allBindings = [];
           deactivateSandbox();
         } else {
+          deactivateSandbox();
           activateSandbox();
         }
         updateBadge();
@@ -572,17 +600,20 @@ const AssetOverlay = (() => {
         if (explicitUserId) myUserId = explicitUserId;
         allBindings = bindingEntries || [];
         const visible = allBindings.filter((b) => !hiddenPushIds.has(b.pushId));
-        // Keep current active binding if it still exists among visible
-        const stillActive = activeBinding && visible.find((b) => (b.interaction?.name || "") === (activeBinding?.name || ""));
-        if (stillActive) {
-          activeBinding = stillActive.interaction;
-        } else {
-          // Prioritize user's own binding, fallback to first visible
-          const myBinding = myUserId && visible.find((b) => b.createdBy === myUserId);
-          activeBinding = myBinding ? myBinding.interaction : (visible.length ? visible[0].interaction : null);
-        }
+        const prevBindingName = activeBinding ? (activeBinding.name || "") : null;
+
+        // Prioritize user's own binding, fallback to first visible
+        const myBinding = myUserId && visible.find((b) => b.createdBy === myUserId);
+        activeBinding = myBinding ? myBinding.interaction : (visible.length ? visible[0].interaction : null);
+
         updateBadge();
-        if (!activeBinding) deactivateSandbox();
+        if (!activeBinding) {
+          deactivateSandbox();
+        } else if (overlayIframe && prevBindingName && (activeBinding.name || "") !== prevBindingName) {
+          // Only re-mount sandbox IF the active interaction actually changed to a different one
+          deactivateSandbox();
+          activateSandbox();
+        }
       },
       setInteractionsEnabled(enabled) {
         interactionsEnabled = enabled;
@@ -595,6 +626,7 @@ const AssetOverlay = (() => {
         window.removeEventListener("keydown", onKeyDown);
         document.removeEventListener("click", onDocClick);
         window.removeEventListener("scroll", onScrollOrResize, { capture: true });
+        document.removeEventListener("scroll", onScrollOrResize, { capture: true });
         window.removeEventListener("resize", onScrollOrResize);
         container.remove();
       },

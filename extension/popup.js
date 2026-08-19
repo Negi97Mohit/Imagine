@@ -79,9 +79,13 @@ function renderImagePicker(images) {
 }
 
 function renderSelected() {
-  selectedInteractionEl.textContent = selectedInteraction
-    ? `Selected: "${selectedInteraction.name}"`
-    : "";
+  if (selectedInteraction) {
+    selectedInteractionEl.style.display = "block";
+    selectedInteractionEl.innerHTML = `<span style="color:var(--muted);font-size:10px;text-transform:uppercase;letter-spacing:0.05em;">Ready to bind:</span> <b style="color:var(--accent);font-size:11.5px;">★ ${selectedInteraction.name}</b>`;
+  } else {
+    selectedInteractionEl.style.display = "none";
+    selectedInteractionEl.innerHTML = "";
+  }
 }
 
 function renderList() {
@@ -144,7 +148,11 @@ async function loadLocal() {
   const builtInItems = builtIns.map((i) => ({ ...i, _key: "local:" + (i.id || i.name), _isBuiltIn: true }));
   const userItems = myInteractions.map((i) => ({ ...i, _key: "local:" + (i.id || i.name), _isBuiltIn: false }));
   localItems = [...builtInItems, ...userItems];
+  if (!selectedInteraction && localItems.length) {
+    selectedInteraction = localItems[0];
+  }
   if (activeTab === "local") renderList();
+  renderSelected();
 }
 
 function loadGlobal() {
@@ -240,22 +248,32 @@ async function removeBinding(assetId, pushId, url, row, btn) {
 
 saveBtn.addEventListener("click", async () => {
   if (!selectedImage || !selectedImage.src) {
-    statusEl.textContent = "Select an image from the picker above first.";
-    return;
+    const firstThumb = imagePickerEl.querySelector(".img-thumb");
+    if (firstThumb) {
+      firstThumb.click();
+    } else {
+      statusEl.textContent = "Select an image from the picker above first.";
+      return;
+    }
   }
   if (!selectedInteraction) {
     statusEl.textContent = "Pick an interaction first.";
     return;
   }
 
-  statusEl.textContent = "Identifying visual fingerprint…";
+  saveBtn.disabled = true;
+  saveBtn.textContent = "Binding…";
+  statusEl.textContent = "⚡ Computing 128-bit visual fingerprint…";
+
   chrome.runtime.sendMessage({ type: "IDENTIFY_ASSET", url: selectedImage.src }, (idRes) => {
     if (!idRes || !idRes.ok || !idRes.assetId) {
+      saveBtn.disabled = false;
+      saveBtn.textContent = "Bind this image";
       statusEl.textContent = "Could not identify image fingerprint.";
       return;
     }
     const assetId = idRes.assetId;
-    statusEl.textContent = "Saving universal binding…";
+    statusEl.textContent = "⚡ Syncing universal binding to Realtime Database…";
 
     const interaction = {
       name: selectedInteraction.name,
@@ -267,10 +285,12 @@ saveBtn.addEventListener("click", async () => {
     chrome.runtime.sendMessage(
       { type: "SAVE_ASSET_BINDING", assetId, url: selectedImage.src, interaction },
       async (saveRes) => {
+        saveBtn.disabled = false;
+        saveBtn.textContent = "Bind this image";
         if (saveRes && saveRes.ok) {
           statusEl.textContent = saveRes.isUpdate
-            ? `✓ Updated! Your interaction for this image has been updated.`
-            : `✓ Bound! Everyone across all devices can now interact with this image.`;
+            ? `✓ Updated! Your interaction for this image is now live.`
+            : `✓ Bound! Everyone across all profiles can now interact with this image.`;
         } else if (saveRes && saveRes.alreadyApplied) {
           statusEl.textContent = `⚠️ "${selectedInteraction.name}" has already been applied to this image by another user.`;
         } else {

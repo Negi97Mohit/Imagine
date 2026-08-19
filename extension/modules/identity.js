@@ -80,7 +80,7 @@ function colorGridDistance(colorA, colorB) {
   return totalDiff;
 }
 
-// Two visual fingerprints match if dHash is within 2 bits AND color grid distance <= 6
+// Two visual fingerprints match if aspect ratio matches AND dHash is within 1 bit AND color grid distance <= 4
 function isVisualMatch(hexA, hexB) {
   if (!hexA || !hexB) return false;
   if (hexA === hexB) return true;
@@ -91,15 +91,24 @@ function isVisualMatch(hexA, hexB) {
   const dhashB = partsB[0];
   const colorA = partsA[1] || "";
   const colorB = partsB[1] || "";
+  const arA = partsA[2] ? parseInt(partsA[2], 10) : null;
+  const arB = partsB[2] ? parseInt(partsB[2], 10) : null;
 
+  // 1. Aspect Ratio Guard: If both have AR tags and differ, reject immediately
+  if (arA !== null && arB !== null && Math.abs(arA - arB) > 1) {
+    return false;
+  }
+
+  // 2. Strict structural check (max 1 bit difference)
   const dDist = hammingDistance64(dhashA, dhashB);
-  if (dDist > 2) return false; // Max 2 bits structural difference
+  if (dDist > 1) return false;
 
+  // 3. Strict color palette correlation
   if (colorA && colorB) {
     const cDist = colorGridDistance(colorA, colorB);
-    return cDist <= 8; // Color palette correlation > 90%
+    return cDist <= 4;
   }
-  return dDist <= 1;
+  return dDist === 0;
 }
 
 async function fetchImageBitmap(url) {
@@ -121,7 +130,7 @@ async function fetchImageBitmap(url) {
   }
 }
 
-// Composite 128-bit Perceptual Hash (64-bit dHash gradient + 64-bit 4x4 Color Grid)
+// Composite 128-bit Perceptual Hash (64-bit dHash gradient + 64-bit 4x4 Color Grid + Aspect Ratio Tag)
 function computeCompositeHash(bitmap) {
   if (!bitmap || bitmap.width < 16 || bitmap.height < 16) return null;
   const w = 9, h = 8;
@@ -176,7 +185,10 @@ function computeCompositeHash(bitmap) {
     colorHex += Math.min(15, Math.max(0, lum)).toString(16);
   }
 
-  return `${dhashHex}_${colorHex}`;
+  // 3. Aspect ratio quantized to integer (e.g. width/height * 10)
+  const arTag = Math.round((bitmap.width / bitmap.height) * 10);
+
+  return `${dhashHex}_${colorHex}_${arTag}`;
 }
 
 async function identifyAsset(rawUrl, directCompositeHash) {

@@ -65,7 +65,7 @@ async function resolveCanonicalAssetId(assetId) {
   const allBindings = await fetchAllBindingsIndexed();
   if (allBindings[assetId]) return assetId;
 
-  // Strict visual matching: dHash <= 2 + color correlation > 90%
+  // Strict visual matching: Aspect ratio + dHash <= 1 + color correlation
   for (const key of Object.keys(allBindings)) {
     if (key.startsWith("visual_")) {
       const keyHex = key.replace(/^visual_/, "");
@@ -77,61 +77,19 @@ async function resolveCanonicalAssetId(assetId) {
   return assetId;
 }
 
-// ---- Realtime Server-Sent Events (SSE) Stream ----
-let _sseAbortController = null;
-async function startRealtimeSyncStream() {
-  if (_sseAbortController) {
-    try { _sseAbortController.abort(); } catch (e) {}
-  }
-  _sseAbortController = new AbortController();
-
-  try {
-    const res = await fetch(`${RTDB_URL.replace(/\/$/, "")}/bindings.json`, {
-      headers: { Accept: "text/event-stream" },
-      signal: _sseAbortController.signal,
-    });
-    if (!res.ok || !res.body) {
-      setTimeout(startRealtimeSyncStream, 5000);
-      return;
-    }
-
-    const reader = res.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      const blocks = buffer.split("\n\n");
-      buffer = blocks.pop() || "";
-
-      for (const block of blocks) {
-        let eventType = "";
-        let eventData = "";
-        for (const line of block.split("\n")) {
-          if (line.startsWith("event: ")) eventType = line.slice(7).trim();
-          else if (line.startsWith("data: ")) eventData = line.slice(6).trim();
-        }
-        if (eventData && (eventType === "put" || eventType === "patch")) {
-          _allBindingsCache = null;
-          _allBindingsCacheTime = 0;
-          broadcastGlobalBindingsUpdate();
-        }
-      }
-    }
-  } catch (e) {
-    setTimeout(startRealtimeSyncStream, 4000);
-  }
-}
-
-function broadcastGlobalBindingsUpdate() {
+function broadcastBindingChanged(assetId, canonicalId) {
+  _allBindingsCache = null;
+  _allBindingsCacheTime = 0;
   chrome.tabs.query({}, (tabs) => {
     for (const tab of tabs) {
       if (tab.id == null) continue;
-      chrome.tabs.sendMessage(tab.id, { type: "GLOBAL_BINDINGS_UPDATED" }, () => {
-        void chrome.runtime.lastError;
-      });
+      chrome.tabs.sendMessage(
+        tab.id,
+        { type: "ASSET_BINDING_CHANGED", assetId, canonicalId: canonicalId || assetId },
+        () => {
+          void chrome.runtime.lastError;
+        }
+      );
     }
   });
 }
@@ -199,6 +157,10 @@ async function lookupBindingsByAsset(assetId) {
 }
 
 async function saveBindingByAsset(assetId, imageUrl, interaction) {
+  if (!interaction || typeof interaction !== "object" || !interaction.name || typeof interaction.js !== "string") {
+    return { ok: false, message: "Invalid interaction payload schema" };
+  }
+
   const userId = await getAnonUserId();
 
   // Resolve canonical ID so we merge into existing asset if visually identical
@@ -295,40 +257,73 @@ async function saveBindingByAsset(assetId, imageUrl, interaction) {
 }
 
 async function deleteBindingByAsset(assetId, pushId) {
-  // 1. If we have a specific pushId, delete just that entry
-  if (pushId && pushId !== "__legacy__" && pushId !== "__firestore__" && pushId !== "__cache__") {
+  const canonicalId = await resolveCanonicalAssetId(assetId);
+
+  // 1. If we have a specific pushId, delete just that entry from canonical and raw IDs
+  if (pushId && pushId !== "__legacy__" && pushId !== "__cache__") {
     try {
-      await fetch(rtdbBindingUrl(assetId, pushId), { method: "DELETE" });
+      await fetch(rtdbBindingUrl(canonicalId, pushId), { method: "DELETE" });
     } catch (e) {}
+    if (canonicalId !== assetId) {
+      try {
+        await fetch(rtdbBindingUrl(assetId, pushId), { method: "DELETE" });
+      } catch (e) {}
+    }
   } else {
-    // Legacy: delete the whole node
     try {
-      await fetch(rtdbBindingUrl(assetId), { method: "DELETE" });
+      await fetch(rtdbBindingUrl(canonicalId), { method: "DELETE" });
     } catch (e) {}
-    try {
-      await fetch(firestoreDocUrl(assetId), { method: "DELETE" });
-    } catch (e) {}
+    if (canonicalId !== assetId) {
+      try {
+        await fetch(rtdbBindingUrl(assetId), { method: "DELETE" });
+      } catch (e) {}
+    }
   }
 
-  // 2. Remove from local cache & myBindings
-  await chrome.storage.local.remove(`bindingCache:${assetId}`);
+  // 2. Remove from in-memory cache and local cache
+  _allBindingsCache = null;
+  _allBindingsCacheTime = 0;
+  await chrome.storage.local.remove([`bindingCache:${assetId}`, `bindingCache:${canonicalId}`]);
+
   const userId = await getAnonUserId();
   const { myBindings = [] } = await chrome.storage.local.get("myBindings");
   const updated = pushId
     ? myBindings.filter((b) => b.pushId !== pushId)
-    : myBindings.filter((b) => b.assetId !== assetId);
+    : myBindings.filter((b) => b.assetId !== assetId && b.assetId !== canonicalId);
   await chrome.storage.local.set({ myBindings: updated });
 
-  return { ok: true };
+  return { ok: true, assetId: canonicalId };
 }
 
-function broadcastBindingChanged(assetId) {
+async function fetchImageDataUrl(url) {
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return { ok: false };
+    const blob = await res.blob();
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve({ ok: true, dataUrl: reader.result });
+      reader.onerror = () => resolve({ ok: false });
+      reader.readAsDataURL(blob);
+    });
+  } catch (e) {
+    return { ok: false };
+  }
+}
+
+function broadcastBindingChanged(assetId, canonicalId) {
+  _allBindingsCache = null;
+  _allBindingsCacheTime = 0;
   chrome.tabs.query({}, (tabs) => {
     for (const tab of tabs) {
       if (tab.id == null) continue;
-      chrome.tabs.sendMessage(tab.id, { type: "ASSET_BINDING_CHANGED", assetId }, () => {
-        void chrome.runtime.lastError;
-      });
+      chrome.tabs.sendMessage(
+        tab.id,
+        { type: "ASSET_BINDING_CHANGED", assetId, canonicalId: canonicalId || assetId },
+        () => {
+          void chrome.runtime.lastError;
+        }
+      );
     }
   });
 }
@@ -410,10 +405,8 @@ async function seedGlobalTemplates() {
 chrome.runtime.onInstalled.addListener(() => {
   seedGlobalTemplates();
   getAnonUserId();
-  startRealtimeSyncStream();
 });
 seedGlobalTemplates();
-startRealtimeSyncStream();
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === "IDENTIFY_ASSET") {
@@ -422,6 +415,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
   if (msg.type === "GET_ANON_USER_ID") {
     getAnonUserId().then((id) => sendResponse({ ok: true, userId: id }));
+    return true;
+  }
+  if (msg.type === "FETCH_IMAGE_DATA_URL") {
+    fetchImageDataUrl(msg.url).then(sendResponse);
     return true;
   }
   if (msg.type === "LOOKUP_ASSET_BINDING") {
@@ -434,6 +431,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           found: true,
           binding: { assetId: msg.assetId, interaction: defaultBinding.interaction },
           bindings: res.bindings,
+          canonicalAssetId: res.canonicalAssetId || msg.assetId,
           userId,
         });
       } else {
@@ -444,14 +442,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
   if (msg.type === "SAVE_ASSET_BINDING") {
     saveBindingByAsset(msg.assetId, msg.url, msg.interaction).then((res) => {
-      if (res.ok) broadcastBindingChanged(msg.assetId);
+      if (res.ok) broadcastBindingChanged(msg.assetId, res.assetId);
       sendResponse(res);
     });
     return true;
   }
   if (msg.type === "DELETE_ASSET_BINDING") {
     deleteBindingByAsset(msg.assetId, msg.pushId).then((res) => {
-      if (res.ok) broadcastBindingChanged(msg.assetId);
+      if (res.ok) broadcastBindingChanged(msg.assetId, res.assetId);
       sendResponse(res);
     });
     return true;

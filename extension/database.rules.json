@@ -1,0 +1,20 @@
+﻿{
+  "rules": {
+    "bindings": {
+      ".read": true,
+      "$assetId": {
+        ".write": true,
+        "$pushId": {
+          ".validate": "newData.hasChildren(['interaction', 'createdBy', 'updatedAt']) && newData.child('interaction').hasChildren(['name', 'js']) && newData.child('createdBy').isString() && newData.child('updatedAt').isString()"
+        }
+      }
+    },
+    "interactions": {
+      ".read": true,
+      "$interactionId": {
+        ".write": true,
+        ".validate": "newData.hasChildren(['name', 'js', 'createdAt']) && newData.child('name').isString() && newData.child('js').isString()"
+      }
+    }
+  }
+}

@@ -329,7 +329,13 @@ const GLOBAL_TEMPLATES = [
     ctx.font = \`\${cell}px monospace\`;
     ctx.textBaseline = "top";
 
-    const data = octx.getImageData(0, 0, W, H).data;
+    let data;
+    try {
+      data = octx.getImageData(0, 0, W, H).data;
+    } catch (e) {
+      ctx.drawImage(img, ox, oy, iw, ih);
+      return;
+    }
     for (let y = 0; y < H; y += cell) {
       for (let x = 0; x < W; x += cell) {
         const i = (y * W + x) * 4;
@@ -401,7 +407,13 @@ const GLOBAL_TEMPLATES = [
     ctx.fillStyle = "#08080c";
     ctx.fillRect(0, 0, W, H);
 
-    const imgData = octx.getImageData(0, 0, W, H).data;
+    let imgData;
+    try {
+      imgData = octx.getImageData(0, 0, W, H).data;
+    } catch (e) {
+      ctx.drawImage(img, ox, oy, iw, ih);
+      return;
+    }
 
     for (const p of particles) {
       const dx = p.x - mx, dy = p.y - my;
@@ -550,7 +562,12 @@ const GLOBAL_TEMPLATES = [
     ctx.clearRect(0, 0, W, H);
     ctx.drawImage(img, ox, oy, iw, ih);
     if (!thermal) return;
-    const data = ctx.getImageData(0, 0, W, H);
+    let data;
+    try {
+      data = ctx.getImageData(0, 0, W, H);
+    } catch (e) {
+      return;
+    }
     const d = data.data;
     for (let i = 0; i < d.length; i += 4) {
       const lum = (d[i] + d[i + 1] + d[i + 2]) / 3;

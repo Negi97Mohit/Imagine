@@ -46,7 +46,13 @@
         const lum = Math.round((0.299 * cData[i * 4] + 0.587 * cData[i * 4 + 1] + 0.114 * cData[i * 4 + 2]) / 16);
         colorHex += Math.min(15, Math.max(0, lum)).toString(16);
       }
-      return `${dhash}_${colorHex}`;
+
+      // Intrinsic aspect ratio tag
+      const nw = img.naturalWidth || img.width || 1;
+      const nh = img.naturalHeight || img.height || 1;
+      const arTag = Math.round((nw / nh) * 10);
+
+      return `${dhash}_${colorHex}_${arTag}`;
     } catch (e) {
       // CORS tainted -> fallback to background fetch
       return null;
@@ -75,6 +81,8 @@
   async function setupOverlay(img, assetId) {
     if (overlays.has(img)) return;
 
+    let record = { assetId, controller: null };
+
     const controller = AssetOverlay.attach(img, assetId, {
       onBindInteraction: async (interaction) => {
         controller.setBinding(interaction);
@@ -82,14 +90,17 @@
           chrome.runtime.sendMessage(
             {
               type: "SAVE_ASSET_BINDING",
-              assetId,
+              assetId: record.assetId || assetId,
               url: ImageDetector.resolvedSrc(img),
               interaction,
             },
             (res) => {
               if (res && res.ok) {
-                lookupBinding(res.assetId || assetId).then((lookupRes) => {
+                const savedAssetId = res.assetId || record.assetId || assetId;
+                record.assetId = savedAssetId;
+                lookupBinding(savedAssetId).then((lookupRes) => {
                   if (lookupRes.found && lookupRes.bindings && lookupRes.bindings.length) {
+                    if (lookupRes.canonicalAssetId) record.assetId = lookupRes.canonicalAssetId;
                     controller.setBindings(lookupRes.bindings, lookupRes.userId);
                   } else {
                     controller.setBinding(interaction);
@@ -104,12 +115,12 @@
       onUnbind: async (pushId) => {
         chrome.runtime.sendMessage({
           type: "DELETE_ASSET_BINDING",
-          assetId,
+          assetId: record.assetId || assetId,
           pushId,
         });
         // Re-fetch remaining bindings after delete
         setTimeout(async () => {
-          const res = await lookupBinding(assetId);
+          const res = await lookupBinding(record.assetId || assetId);
           if (res.found && res.bindings && res.bindings.length) {
             controller.setBindings(res.bindings, res.userId);
           } else {
@@ -119,10 +130,14 @@
       },
     });
 
-    overlays.set(img, { assetId, controller });
+    record.controller = controller;
+    overlays.set(img, record);
 
     const existing = await lookupBinding(assetId);
     if (existing && existing.found) {
+      if (existing.canonicalAssetId) {
+        record.assetId = existing.canonicalAssetId;
+      }
       if (existing.bindings && existing.bindings.length) {
         controller.setBindings(existing.bindings, existing.userId);
       } else if (existing.binding) {
@@ -140,7 +155,16 @@
     await setupOverlay(img, res.assetId);
   }
 
-  ImageDetector.start({ onCandidate });
+  ImageDetector.start({
+    onCandidate,
+    onRemoved: (img) => {
+      const record = overlays.get(img);
+      if (record) {
+        record.controller && record.controller.destroy();
+        overlays.delete(img);
+      }
+    },
+  });
 
   // ---- Live Viewport & Cross-Profile Sync Engine ----
   async function syncActiveOverlays() {
@@ -156,7 +180,10 @@
       if (inView) {
         lookupBinding(record.assetId).then((res) => {
           if (res.found && res.bindings && res.bindings.length) {
+            if (res.canonicalAssetId) record.assetId = res.canonicalAssetId;
             record.controller.setBindings(res.bindings, res.userId);
+          } else if (res.found && res.binding) {
+            record.controller.setBinding(res.binding.interaction);
           } else {
             record.controller.setBinding(null);
           }
@@ -168,6 +195,9 @@
   // Fast live sync (every 2.5s) for visible images across open tabs & profiles
   setInterval(syncActiveOverlays, 2500);
   window.addEventListener("focus", syncActiveOverlays);
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) syncActiveOverlays();
+  });
 
   // Handle messages from popup or background
   chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
@@ -185,9 +215,15 @@
       return true;
     }
     if (msg.type === "ASSET_BINDING_CHANGED" && msg.assetId) {
-      lookupBinding(msg.assetId).then((res) => {
+      const targetId = msg.canonicalId || msg.assetId;
+      lookupBinding(targetId).then((res) => {
         overlays.forEach((record) => {
-          if (record.assetId === msg.assetId) {
+          if (
+            record.assetId === msg.assetId ||
+            record.assetId === msg.canonicalId ||
+            (res.canonicalAssetId && record.assetId === res.canonicalAssetId)
+          ) {
+            if (res.canonicalAssetId) record.assetId = res.canonicalAssetId;
             if (res.found && res.bindings && res.bindings.length) {
               record.controller.setBindings(res.bindings, res.userId);
             } else {

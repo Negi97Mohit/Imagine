@@ -11,7 +11,7 @@
   },
   "permissions": ["storage"],
   "host_permissions": [
-    "https://firestore.googleapis.com/*",
+    "https://*.firebaseio.com/*",
     "https://*/*",
     "http://*/*"
   ],

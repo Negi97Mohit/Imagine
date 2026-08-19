@@ -17,6 +17,7 @@ const ImageDetector = (() => {
 
   let candidateCb = () => {};
   let visibilityCb = () => {};
+  let removedCb = () => {};
   let io = null;
   let mo = null;
 
@@ -89,20 +90,20 @@ const ImageDetector = (() => {
     }
   }
 
-  function start({ onCandidate, onVisibilityChange } = {}) {
+  function start({ onCandidate, onVisibilityChange, onRemoved } = {}) {
     candidateCb = onCandidate || candidateCb;
     visibilityCb = onVisibilityChange || visibilityCb;
+    removedCb = onRemoved || removedCb;
 
     io = new IntersectionObserver(onIntersect, {
       root: null,
-      rootMargin: "200px", // start a little before it's fully on screen
-      threshold: 0.1,
+      rootMargin: "300px", // start 300px before viewport
+      threshold: 0.05,
     });
 
     scanAll(document);
 
-    // Covers infinite scroll, SPA route swaps, and lazy-loading libs that
-    // rewrite src/srcset after insertion.
+    // Covers infinite scroll, SPA route swaps, and lazy-loading libs
     mo = new MutationObserver((mutations) => {
       for (const m of mutations) {
         m.addedNodes.forEach((node) => {
@@ -110,9 +111,23 @@ const ImageDetector = (() => {
           if (node.tagName === "IMG") considerImg(node);
           else if (node.querySelectorAll) scanAll(node);
         });
+        m.removedNodes.forEach((node) => {
+          if (node.nodeType !== 1) return;
+          if (node.tagName === "IMG") {
+            seen.delete(node);
+            visible.delete(node);
+            io && io.unobserve(node);
+            removedCb(node);
+          } else if (node.querySelectorAll) {
+            node.querySelectorAll("img").forEach((img) => {
+              seen.delete(img);
+              visible.delete(img);
+              io && io.unobserve(img);
+              removedCb(img);
+            });
+          }
+        });
         if (m.type === "attributes" && m.target.tagName === "IMG") {
-          // src/srcset swapped in place (common lazy-load pattern) - treat
-          // as a fresh candidate under its new resolved URL.
           seen.delete(m.target);
           considerImg(m.target);
         }
