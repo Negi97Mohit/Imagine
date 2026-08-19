@@ -2,10 +2,62 @@
   const overlays = new Map(); // img -> { assetId, controller }
   const identifying = new WeakSet();
 
+  function tryExtractDirectHash(img) {
+    try {
+      if (!img.complete || (img.naturalWidth && img.naturalWidth < 16)) return null;
+      const canvas = document.createElement("canvas");
+      canvas.width = 9;
+      canvas.height = 8;
+      const ctx = canvas.getContext("2d", { willReadFrequently: true });
+      ctx.drawImage(img, 0, 0, 9, 8);
+      const imgData = ctx.getImageData(0, 0, 9, 8).data;
+
+      const gray = new Float32Array(72);
+      let sum = 0;
+      for (let i = 0; i < 72; i++) {
+        const g = 0.299 * imgData[i * 4] + 0.587 * imgData[i * 4 + 1] + 0.114 * imgData[i * 4 + 2];
+        gray[i] = g;
+        sum += g;
+      }
+      const mean = sum / 72;
+      let varSum = 0;
+      for (let i = 0; i < 72; i++) {
+        const d = gray[i] - mean;
+        varSum += d * d;
+      }
+      if (Math.sqrt(varSum / 72) < 4.5) return null; // Flat placeholder
+
+      let bits = "";
+      for (let y = 0; y < 8; y++) {
+        for (let x = 0; x < 8; x++) {
+          bits += gray[y * 9 + x] < gray[y * 9 + x + 1] ? "1" : "0";
+        }
+      }
+      let dhash = "";
+      for (let i = 0; i < 64; i += 4) dhash += parseInt(bits.slice(i, i + 4), 2).toString(16);
+
+      // Color grid
+      canvas.width = 4;
+      canvas.height = 4;
+      ctx.drawImage(img, 0, 0, 4, 4);
+      const cData = ctx.getImageData(0, 0, 4, 4).data;
+      let colorHex = "";
+      for (let i = 0; i < 16; i++) {
+        const lum = Math.round((0.299 * cData[i * 4] + 0.587 * cData[i * 4 + 1] + 0.114 * cData[i * 4 + 2]) / 16);
+        colorHex += Math.min(15, Math.max(0, lum)).toString(16);
+      }
+      return `${dhash}_${colorHex}`;
+    } catch (e) {
+      // CORS tainted -> fallback to background fetch
+      return null;
+    }
+  }
+
   function identifyAsset(img) {
+    const directHash = tryExtractDirectHash(img);
     return new Promise((resolve) => {
       chrome.runtime.sendMessage(
-        { type: "IDENTIFY_ASSET", url: ImageDetector.resolvedSrc(img) },
+        { type: "IDENTIFY_ASSET", url: ImageDetector.resolvedSrc(img), directHash },
         (res) => resolve(res || { ok: false })
       );
     });
@@ -26,11 +78,27 @@
     const controller = AssetOverlay.attach(img, assetId, {
       onBindInteraction: async (interaction) => {
         controller.setBinding(interaction);
-        chrome.runtime.sendMessage({
-          type: "SAVE_ASSET_BINDING",
-          assetId,
-          url: ImageDetector.resolvedSrc(img),
-          interaction,
+        return new Promise((resolve) => {
+          chrome.runtime.sendMessage(
+            {
+              type: "SAVE_ASSET_BINDING",
+              assetId,
+              url: ImageDetector.resolvedSrc(img),
+              interaction,
+            },
+            (res) => {
+              if (res && res.ok) {
+                lookupBinding(res.assetId || assetId).then((lookupRes) => {
+                  if (lookupRes.found && lookupRes.bindings && lookupRes.bindings.length) {
+                    controller.setBindings(lookupRes.bindings, lookupRes.userId);
+                  } else {
+                    controller.setBinding(interaction);
+                  }
+                });
+              }
+              resolve(res || { ok: false });
+            }
+          );
         });
       },
       onUnbind: async (pushId) => {
@@ -43,11 +111,11 @@
         setTimeout(async () => {
           const res = await lookupBinding(assetId);
           if (res.found && res.bindings && res.bindings.length) {
-            controller.setBindings(res.bindings);
+            controller.setBindings(res.bindings, res.userId);
           } else {
             controller.setBinding(null);
           }
-        }, 500);
+        }, 400);
       },
     });
 
@@ -56,7 +124,7 @@
     const existing = await lookupBinding(assetId);
     if (existing && existing.found) {
       if (existing.bindings && existing.bindings.length) {
-        controller.setBindings(existing.bindings);
+        controller.setBindings(existing.bindings, existing.userId);
       } else if (existing.binding) {
         controller.setBinding(existing.binding.interaction);
       }
@@ -68,11 +136,38 @@
     identifying.add(img);
     const res = await identifyAsset(img);
     identifying.delete(img);
-    if (!res.ok || !res.assetId) return;
+    if (!res.ok || !res.assetId || res.isPlaceholder) return;
     await setupOverlay(img, res.assetId);
   }
 
   ImageDetector.start({ onCandidate });
+
+  // ---- Live Viewport & Cross-Profile Sync Engine ----
+  async function syncActiveOverlays() {
+    if (document.hidden) return;
+    for (const [img, record] of Array.from(overlays.entries())) {
+      if (!document.body.contains(img)) {
+        record.controller && record.controller.destroy();
+        overlays.delete(img);
+        continue;
+      }
+      const r = img.getBoundingClientRect();
+      const inView = r.bottom > -100 && r.top < window.innerHeight + 100 && r.right > -100 && r.left < window.innerWidth + 100;
+      if (inView) {
+        lookupBinding(record.assetId).then((res) => {
+          if (res.found && res.bindings && res.bindings.length) {
+            record.controller.setBindings(res.bindings, res.userId);
+          } else {
+            record.controller.setBinding(null);
+          }
+        });
+      }
+    }
+  }
+
+  // Fast live sync (every 2.5s) for visible images across open tabs & profiles
+  setInterval(syncActiveOverlays, 2500);
+  window.addEventListener("focus", syncActiveOverlays);
 
   // Handle messages from popup or background
   chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
@@ -94,13 +189,16 @@
         overlays.forEach((record) => {
           if (record.assetId === msg.assetId) {
             if (res.found && res.bindings && res.bindings.length) {
-              record.controller.setBindings(res.bindings);
+              record.controller.setBindings(res.bindings, res.userId);
             } else {
               record.controller.setBinding(null);
             }
           }
         });
       });
+    }
+    if (msg.type === "GLOBAL_BINDINGS_UPDATED") {
+      syncActiveOverlays();
     }
     if (msg.type === "TOGGLE_INTERACTIONS") {
       overlays.forEach((record) => {

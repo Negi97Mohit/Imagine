@@ -268,7 +268,11 @@ saveBtn.addEventListener("click", async () => {
       { type: "SAVE_ASSET_BINDING", assetId, url: selectedImage.src, interaction },
       async (saveRes) => {
         if (saveRes && saveRes.ok) {
-          statusEl.textContent = `✓ Bound! Everyone across all devices can now interact with this image.`;
+          statusEl.textContent = saveRes.isUpdate
+            ? `✓ Updated! Your interaction for this image has been updated.`
+            : `✓ Bound! Everyone across all devices can now interact with this image.`;
+        } else if (saveRes && saveRes.alreadyApplied) {
+          statusEl.textContent = `⚠️ "${selectedInteraction.name}" has already been applied to this image by another user.`;
         } else {
           statusEl.textContent = "Failed to save binding.";
         }

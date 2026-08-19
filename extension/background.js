@@ -35,9 +35,107 @@ function firestoreDocUrl(assetId) {
   return `https://firestore.googleapis.com/v1/projects/${FIRESTORE_PROJECT_ID}/databases/(default)/documents/bindings/${assetId}`;
 }
 
-// ---- Multi-Binding Helpers ----
-// Old format: { assetId, imageUrl, interaction, updatedAt }
-// New format: { <pushId>: { interaction, imageUrl, createdBy, updatedAt }, ... }
+// ---- Multi-Binding & Fuzzy Perceptual Helpers ----
+let _allBindingsCache = null;
+let _allBindingsCacheTime = 0;
+const BINDINGS_CACHE_TTL = 3000; // 3s
+
+async function fetchAllBindingsIndexed() {
+  const now = Date.now();
+  if (_allBindingsCache && now - _allBindingsCacheTime < BINDINGS_CACHE_TTL) {
+    return _allBindingsCache;
+  }
+  try {
+    const res = await fetch(`${RTDB_URL.replace(/\/$/, "")}/bindings.json`, { cache: "no-store" });
+    if (res.ok) {
+      _allBindingsCache = (await res.json()) || {};
+      _allBindingsCacheTime = now;
+      return _allBindingsCache;
+    }
+  } catch (e) {
+    console.warn("[locked-image] Failed to fetch bindings index:", e);
+  }
+  return _allBindingsCache || {};
+}
+
+async function resolveCanonicalAssetId(assetId) {
+  if (!assetId) return assetId;
+  if (!assetId.startsWith("visual_")) return assetId;
+  const targetHex = assetId.replace(/^visual_/, "");
+  const allBindings = await fetchAllBindingsIndexed();
+  if (allBindings[assetId]) return assetId;
+
+  // Strict visual matching: dHash <= 2 + color correlation > 90%
+  for (const key of Object.keys(allBindings)) {
+    if (key.startsWith("visual_")) {
+      const keyHex = key.replace(/^visual_/, "");
+      if (isVisualMatch(targetHex, keyHex)) {
+        return key;
+      }
+    }
+  }
+  return assetId;
+}
+
+// ---- Realtime Server-Sent Events (SSE) Stream ----
+let _sseAbortController = null;
+async function startRealtimeSyncStream() {
+  if (_sseAbortController) {
+    try { _sseAbortController.abort(); } catch (e) {}
+  }
+  _sseAbortController = new AbortController();
+
+  try {
+    const res = await fetch(`${RTDB_URL.replace(/\/$/, "")}/bindings.json`, {
+      headers: { Accept: "text/event-stream" },
+      signal: _sseAbortController.signal,
+    });
+    if (!res.ok || !res.body) {
+      setTimeout(startRealtimeSyncStream, 5000);
+      return;
+    }
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const blocks = buffer.split("\n\n");
+      buffer = blocks.pop() || "";
+
+      for (const block of blocks) {
+        let eventType = "";
+        let eventData = "";
+        for (const line of block.split("\n")) {
+          if (line.startsWith("event: ")) eventType = line.slice(7).trim();
+          else if (line.startsWith("data: ")) eventData = line.slice(6).trim();
+        }
+        if (eventData && (eventType === "put" || eventType === "patch")) {
+          _allBindingsCache = null;
+          _allBindingsCacheTime = 0;
+          broadcastGlobalBindingsUpdate();
+        }
+      }
+    }
+  } catch (e) {
+    setTimeout(startRealtimeSyncStream, 4000);
+  }
+}
+
+function broadcastGlobalBindingsUpdate() {
+  chrome.tabs.query({}, (tabs) => {
+    for (const tab of tabs) {
+      if (tab.id == null) continue;
+      chrome.tabs.sendMessage(tab.id, { type: "GLOBAL_BINDINGS_UPDATED" }, () => {
+        void chrome.runtime.lastError;
+      });
+    }
+  });
+}
+
 function normaliseBindings(data) {
   if (!data || typeof data !== "object") return [];
   // Old single-binding format — has "interaction" at top level
@@ -67,62 +165,68 @@ function normaliseBindings(data) {
 }
 
 async function lookupBindingsByAsset(assetId) {
-  // 1. Try Firebase Realtime Database
+  if (!assetId) return { found: false, bindings: [] };
+
+  // 1. Resolve canonical asset ID (strict perceptual matching)
+  const canonicalId = await resolveCanonicalAssetId(assetId);
+
+  // 2. Try Firebase Realtime Database with canonical ID
   try {
-    const res = await fetch(rtdbBindingUrl(assetId), { cache: "no-store" });
+    const res = await fetch(rtdbBindingUrl(canonicalId), { cache: "no-store" });
     if (res.ok) {
       const data = await res.json();
       const bindings = normaliseBindings(data);
       if (bindings.length) {
-        await chrome.storage.local.set({ [`bindingCache:${assetId}`]: bindings });
-        return { found: true, bindings };
+        await chrome.storage.local.set({
+          [`bindingCache:${assetId}`]: bindings,
+          [`bindingCache:${canonicalId}`]: bindings,
+        });
+        return { found: true, bindings, canonicalAssetId: canonicalId };
       }
     }
   } catch (e) {
     console.warn("[locked-image] RTDB lookup failed:", e);
   }
 
-  // 2. Fallback to Firestore (old single-binding)
-  try {
-    const res = await fetch(firestoreDocUrl(assetId), { cache: "no-store" });
-    if (res.ok) {
-      const doc = await res.json();
-      const f = doc.fields || {};
-      let interaction = null;
-      if (f.interaction && f.interaction.stringValue) {
-        try { interaction = JSON.parse(f.interaction.stringValue); } catch (err) {}
-      }
-      if (interaction) {
-        const bindings = [{
-          pushId: "__firestore__",
-          interaction,
-          imageUrl: f.imageUrl?.stringValue || "",
-          createdBy: "unknown",
-          updatedAt: f.updatedAt?.timestampValue || "",
-        }];
-        await chrome.storage.local.set({ [`bindingCache:${assetId}`]: bindings });
-        return { found: true, bindings };
-      }
-    }
-  } catch (e) {}
-
   // 3. Fallback to local cache
   const local = await chrome.storage.local.get(`bindingCache:${assetId}`);
   const cached = local[`bindingCache:${assetId}`];
   if (cached && Array.isArray(cached) && cached.length) {
-    return { found: true, bindings: cached };
+    return { found: true, bindings: cached, canonicalAssetId: canonicalId };
   }
-  // Old cache format (single interaction object)
-  if (cached && typeof cached === "object" && cached.js !== undefined) {
-    return { found: true, bindings: [{ pushId: "__cache__", interaction: cached, imageUrl: "", createdBy: "unknown", updatedAt: "" }] };
-  }
-  return { found: false, bindings: [] };
+
+  return { found: false, bindings: [], canonicalAssetId: canonicalId };
 }
 
 async function saveBindingByAsset(assetId, imageUrl, interaction) {
   const userId = await getAnonUserId();
 
-  // 1. Build the entry
+  // Resolve canonical ID so we merge into existing asset if visually identical
+  const canonicalId = await resolveCanonicalAssetId(assetId);
+
+  // 1. Check existing bindings for this asset
+  const existingLookup = await lookupBindingsByAsset(canonicalId);
+  const existingList = existingLookup && existingLookup.found ? existingLookup.bindings : [];
+
+  // 2. Check if this exact interaction is already applied to this image by someone else
+  const normName = (interaction.name || "").trim().toLowerCase();
+  const duplicate = existingList.find(
+    (b) => (b.interaction?.name || "").trim().toLowerCase() === normName
+  );
+
+  if (duplicate && duplicate.createdBy !== userId) {
+    return {
+      ok: false,
+      alreadyApplied: true,
+      existingBinding: duplicate,
+      message: `"${interaction.name}" has already been applied to this image by another user.`,
+    };
+  }
+
+  // 3. Check if current user already has a binding on this asset (enforce 1 per user)
+  const userExisting = existingList.find((b) => b.createdBy === userId);
+
+  let pushId = userExisting ? userExisting.pushId : null;
   const entry = {
     interaction,
     imageUrl: imageUrl || "",
@@ -130,40 +234,64 @@ async function saveBindingByAsset(assetId, imageUrl, interaction) {
     updatedAt: new Date().toISOString(),
   };
 
-  let pushId = null;
-
-  // 2. Persist to Firebase Realtime Database (POST auto-generates a push ID)
-  try {
-    const res = await fetch(rtdbBindingUrl(assetId), {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(entry),
-    });
-    if (res.ok) {
-      const data = await res.json();
-      pushId = data.name; // Firebase returns { name: "<pushId>" }
+  // If updating existing binding
+  if (userExisting && pushId && !pushId.startsWith("__") && !pushId.startsWith("local_")) {
+    try {
+      const res = await fetch(rtdbBindingUrl(canonicalId, pushId), {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(entry),
+      });
+      if (!res.ok) {
+        console.warn("[locked-image] RTDB update failed with status:", res.status);
+      }
+    } catch (e) {
+      console.warn("[locked-image] RTDB update failed:", e);
     }
-  } catch (e) {
-    console.warn("[locked-image] RTDB save failed:", e);
+  } else {
+    // New binding: POST to RTDB (auto-generates pushId)
+    try {
+      const res = await fetch(rtdbBindingUrl(canonicalId), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(entry),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        pushId = data.name;
+      }
+    } catch (e) {
+      console.warn("[locked-image] RTDB save failed:", e);
+    }
   }
 
-  if (!pushId) pushId = "local_" + crypto.randomUUID();
+  if (!pushId) pushId = userExisting ? userExisting.pushId : "local_" + crypto.randomUUID();
 
-  // 3. Update local cache & myBindings
-  await chrome.storage.local.set({ [`bindingCache:${assetId}`]: [{ ...entry, pushId }] });
+  // Invalidate in-memory cache to ensure fresh reads
+  _allBindingsCacheTime = 0;
+
+  // 4. Update local cache
+  const otherBindings = existingList.filter((b) => b.createdBy !== userId && b.pushId !== pushId);
+  const updatedBindings = [{ ...entry, pushId }, ...otherBindings];
+  await chrome.storage.local.set({
+    [`bindingCache:${assetId}`]: updatedBindings,
+    [`bindingCache:${canonicalId}`]: updatedBindings,
+  });
+
+  // 5. Update myBindings list
   const { myBindings = [] } = await chrome.storage.local.get("myBindings");
-  const filtered = myBindings.filter((b) => !(b.assetId === assetId && b.createdBy === userId));
-  filtered.unshift({
-    assetId,
+  const filteredMyBindings = myBindings.filter((b) => b.assetId !== canonicalId && b.assetId !== assetId);
+  filteredMyBindings.unshift({
+    assetId: canonicalId,
     pushId,
     url: imageUrl || "",
     interactionName: interaction.name || "Untitled",
     createdBy: userId,
     boundAt: new Date().toISOString(),
   });
-  await chrome.storage.local.set({ myBindings: filtered });
+  await chrome.storage.local.set({ myBindings: filteredMyBindings });
 
-  return { ok: true, assetId, pushId };
+  return { ok: true, assetId: canonicalId, pushId, isUpdate: !!userExisting };
 }
 
 async function deleteBindingByAsset(assetId, pushId) {
@@ -281,14 +409,15 @@ async function seedGlobalTemplates() {
 
 chrome.runtime.onInstalled.addListener(() => {
   seedGlobalTemplates();
-  // Ensure anon user ID exists on install
   getAnonUserId();
+  startRealtimeSyncStream();
 });
 seedGlobalTemplates();
+startRealtimeSyncStream();
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === "IDENTIFY_ASSET") {
-    identifyAsset(msg.url).then(sendResponse);
+    identifyAsset(msg.url, msg.directHash).then(sendResponse);
     return true;
   }
   if (msg.type === "GET_ANON_USER_ID") {
@@ -296,13 +425,16 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
   if (msg.type === "LOOKUP_ASSET_BINDING") {
-    // Backward compat: return first binding as "binding" + full list as "bindings"
-    lookupBindingsByAsset(msg.assetId).then((res) => {
+    lookupBindingsByAsset(msg.assetId).then(async (res) => {
       if (res.found && res.bindings.length) {
+        const userId = await getAnonUserId();
+        const myBinding = res.bindings.find((b) => b.createdBy === userId);
+        const defaultBinding = myBinding || res.bindings[0];
         sendResponse({
           found: true,
-          binding: { assetId: msg.assetId, interaction: res.bindings[0].interaction },
+          binding: { assetId: msg.assetId, interaction: defaultBinding.interaction },
           bindings: res.bindings,
+          userId,
         });
       } else {
         sendResponse({ found: false, binding: null, bindings: [] });

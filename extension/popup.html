@@ -1,191 +1,549 @@
 <!doctype html>
 <html>
-<head>
-<meta charset="utf-8">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;0,900;1,400&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
-<style>
-  :root {
-    --bg: #f4f1ec;
-    --paper: #ffffff;
-    --ink: #0a0a0a;
-    --muted: #8a8378;
-    --rule: #1a1a1a;
-    --hair: rgba(10, 10, 10, 0.12);
-    --accent: #b8410e;
-    --code-bg: #efeae2;
-    --danger: #c53a2a;
-  }
-  * { box-sizing: border-box; }
-  body {
-    width: 350px;
-    margin: 0;
-    font-family: "Inter", sans-serif;
-    background: var(--bg);
-    color: var(--ink);
-    padding: 0;
-    display: flex;
-    flex-direction: column;
-    max-height: 580px;
-  }
-  .masthead { border-bottom: 1px solid var(--rule); padding: 12px 16px 10px; }
-  .eyebrow { font-size: 9px; letter-spacing: 0.28em; text-transform: uppercase; color: var(--accent); }
-  h1 { font-family: "Playfair Display", serif; font-weight: 700; font-size: 19px; margin: 2px 0 0; }
-  h1 em { font-style: italic; font-weight: 400; color: var(--accent); }
-  .masthead-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 6px; }
-  .mode-tabs { display: flex; flex: 1; border: 1px solid var(--rule); }
-  .mode-tab {
-    flex: 1; padding: 6px 4px; background: var(--paper); color: var(--muted);
-    font-size: 9.5px; letter-spacing: 0.08em; text-transform: uppercase; text-align: center;
-    cursor: pointer; border-right: 1px solid var(--hair);
-  }
-  .mode-tab:last-child { border-right: 0; }
-  .mode-tab.active { background: var(--ink); color: var(--bg); font-weight: 600; }
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --bg: #f4f1ec;
+        --paper: #ffffff;
+        --ink: #0a0a0a;
+        --muted: #8a8378;
+        --hair: rgba(10, 10, 10, 0.1);
+        --line: rgba(10, 10, 10, 0.85);
+        --accent: #b8410e;
+        --code-bg: #efeae2;
+        --danger: #c53a2a;
+        --pad: 14px;
+        --gap: 14px;
+      }
+      * {
+        box-sizing: border-box;
+        scrollbar-width: thin;
+        scrollbar-color: var(--hair) transparent;
+      }
+      ::-webkit-scrollbar {
+        width: 3px;
+        height: 3px;
+      }
+      ::-webkit-scrollbar-track {
+        background: transparent;
+      }
+      ::-webkit-scrollbar-thumb {
+        background: rgba(10, 10, 10, 0.25);
+      }
+      ::-webkit-scrollbar-thumb:hover {
+        background: var(--accent);
+      }
 
-  .toggle-btn {
-    flex-shrink: 0; background: transparent; border: 1px solid var(--rule); color: var(--ink);
-    font-family: "Inter", sans-serif; font-size: 9px; letter-spacing: 0.06em; text-transform: uppercase;
-    padding: 5px 8px; cursor: pointer; font-weight: 600; white-space: nowrap;
-    transition: background .15s ease, color .15s ease;
-  }
-  .toggle-btn:hover { background: var(--ink); color: var(--bg); }
-  .toggle-btn.paused { background: var(--accent); border-color: var(--accent); color: #fff; }
+      html,
+      body {
+        height: 100%;
+      }
+      body {
+        width: 100%;
+        min-width: 300px;
+        max-width: 420px;
+        min-height: 440px;
+        max-height: 600px;
+        margin: 0 auto;
+        font-family: "Inter", system-ui, sans-serif;
+        font-size: 12px;
+        line-height: 1.45;
+        background: var(--bg);
+        color: var(--ink);
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        -webkit-font-smoothing: antialiased;
+      }
+      @media (min-width: 480px) {
+        body {
+          width: 400px;
+        }
+      }
 
-  .section-title { font-size: 10px; text-transform: uppercase; letter-spacing: 0.12em; color: var(--muted); font-weight: 600; margin: 10px 0 4px; }
+      /* ---- Header ---- */
+      .masthead {
+        flex-shrink: 0;
+        padding: var(--pad);
+        background: var(--bg);
+        border-bottom: 1px solid var(--line);
+      }
+      .eyebrow {
+        font-size: 8.5px;
+        letter-spacing: 0.22em;
+        text-transform: uppercase;
+        color: var(--muted);
+        font-weight: 600;
+        display: block;
+      }
+      h1 {
+        font-size: 20px;
+        font-weight: 700;
+        margin: 4px 0 0;
+        line-height: 1;
+        letter-spacing: -0.03em;
+      }
+      h1 em {
+        font-style: normal;
+        font-weight: 400;
+        color: var(--accent);
+      }
 
-  .image-picker {
-    display: flex; gap: 8px; overflow-x: auto; padding: 6px 0; max-height: 90px;
-  }
-  .img-thumb {
-    width: 68px; height: 68px; flex-shrink: 0; object-fit: cover;
-    border: 2px solid transparent; cursor: pointer; background: var(--code-bg);
-  }
-  .img-thumb.selected { border-color: var(--accent); outline: 2px solid var(--ink); }
+      .masthead-row {
+        display: flex;
+        align-items: stretch;
+        gap: 6px;
+        margin-top: 14px;
+      }
 
-  .tabs { display: flex; margin-top: 8px; border: 1px solid var(--rule); }
-  .tab {
-    flex: 1; padding: 7px 4px; background: var(--paper); color: var(--muted);
-    font-size: 9.5px; font-weight: 500; text-transform: uppercase; text-align: center;
-    cursor: pointer; border-right: 1px solid var(--hair);
-  }
-  .tab:last-child { border-right: 0; }
-  .tab.active { background: var(--ink); color: var(--bg); font-weight: 600; }
+      .mode-tabs {
+        display: flex;
+        flex: 1 1 auto;
+        border: 1px solid var(--line);
+      }
+      .mode-tab {
+        flex: 1;
+        padding: 7px 8px;
+        background: var(--paper);
+        color: var(--muted);
+        font-size: 10px;
+        font-weight: 600;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        text-align: center;
+        cursor: pointer;
+        user-select: none;
+        white-space: nowrap;
+        transition:
+          background 0.15s ease,
+          color 0.15s ease;
+      }
+      .mode-tab + .mode-tab {
+        border-left: 1px solid var(--line);
+      }
+      .mode-tab:hover {
+        color: var(--ink);
+        background: var(--code-bg);
+      }
+      .mode-tab.active {
+        background: var(--ink);
+        color: var(--bg);
+      }
 
-  .list { max-height: 120px; overflow-y: auto; border: 1px solid var(--rule); border-top: 0; }
-  .item {
-    padding: 7px 9px; font-size: 11.5px; cursor: pointer; border-bottom: 1px solid var(--hair);
-    display: flex; align-items: center; justify-content: space-between; gap: 4px;
-  }
-  .item:last-child { border-bottom: 0; }
-  .item:hover { background: var(--code-bg); }
-  .item.selected { background: var(--ink); color: var(--bg); font-weight: 600; }
-  .item .item-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .item .item-edit {
-    flex-shrink: 0; background: transparent; border: 1px solid var(--hair); color: var(--muted);
-    font-size: 9px; padding: 2px 5px; cursor: pointer; border-radius: 2px;
-    transition: background .15s ease, color .15s ease;
-  }
-  .item .item-edit:hover { background: var(--ink); color: var(--bg); }
-  .item.selected .item-edit { border-color: rgba(255,255,255,0.3); color: var(--bg); }
-  .item.selected .item-edit:hover { background: var(--bg); color: var(--ink); }
-  .empty { padding: 12px 9px; font-size: 11px; color: var(--muted); text-align: center; font-style: italic; }
+      .toggle-btn {
+        flex: 0 0 auto;
+        background: var(--paper);
+        border: 1px solid var(--line);
+        color: var(--ink);
+        font-family: inherit;
+        font-size: 10px;
+        font-weight: 600;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        padding: 0 11px;
+        cursor: pointer;
+        white-space: nowrap;
+        transition:
+          background 0.15s ease,
+          color 0.15s ease;
+      }
+      .toggle-btn:hover {
+        background: var(--ink);
+        color: var(--bg);
+      }
+      .toggle-btn.paused {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: #fff;
+      }
 
-  .binding-list { max-height: 280px; overflow-y: auto; border: 1px solid var(--rule); }
-  .binding-item { padding: 8px 9px; border-bottom: 1px solid var(--hair); display: flex; flex-direction: column; gap: 4px; }
-  .binding-item:last-child { border-bottom: 0; }
-  .binding-url { font-size: 10px; color: var(--ink); word-break: break-all; }
-  .binding-interaction { font-size: 10.5px; color: var(--accent); font-weight: 600; }
+      /* ---- Content ---- */
+      .scroll-content {
+        flex: 1 1 auto;
+        overflow-y: auto;
+        overscroll-behavior: contain;
+      }
+      .body-pad {
+        padding: var(--pad);
+      }
 
-  button.main-btn {
-    margin-top: 10px; width: 100%; padding: 9px; border: 1px solid var(--ink);
-    background: var(--ink); color: var(--bg); font-size: 10.5px; font-weight: 600;
-    letter-spacing: 0.12em; text-transform: uppercase; cursor: pointer;
-  }
-  button.main-btn:hover { background: var(--accent); border-color: var(--accent); color: #fff; }
-  button.danger {
-    margin-top: 4px; padding: 5px; background: transparent; color: #c53a2a; border: 1px solid #c53a2a;
-    font-size: 9.5px; text-transform: uppercase; cursor: pointer; font-weight: 600;
-  }
-  button.danger:hover { background: #c53a2a; color: #fff; }
+      .section-title {
+        font-size: 9px;
+        text-transform: uppercase;
+        letter-spacing: 0.16em;
+        color: var(--muted);
+        font-weight: 600;
+        margin: 0 0 8px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .section-title::after {
+        content: "";
+        flex: 1;
+        height: 1px;
+        background: var(--hair);
+      }
+      .section-title + * + .section-title {
+        margin-top: var(--gap);
+      }
 
-  #status { margin-top: 8px; font-size: 10.5px; color: var(--muted); min-height: 14px; font-style: italic; }
-  #selectedInteraction { margin-top: 6px; font-size: 10.5px; color: var(--accent); font-weight: 600; min-height: 14px; }
-  .scroll-content { flex: 1; overflow-y: auto; }
+      .image-picker {
+        display: flex;
+        gap: 6px;
+        overflow-x: auto;
+        padding: 0 0 10px;
+        scroll-snap-type: x proximity;
+      }
+      .img-thumb {
+        width: 66px;
+        aspect-ratio: 1 / 1;
+        height: auto;
+        flex-shrink: 0;
+        object-fit: cover;
+        border: 1px solid var(--hair);
+        outline: 2px solid transparent;
+        outline-offset: -1px;
+        cursor: pointer;
+        background: var(--code-bg);
+        scroll-snap-align: start;
+        transition:
+          outline-color 0.15s ease,
+          border-color 0.15s ease;
+      }
+      .img-thumb:hover {
+        border-color: var(--line);
+      }
+      .img-thumb.selected {
+        border-color: var(--accent);
+        outline-color: var(--accent);
+      }
 
-  /* ---- Sticky Footer ---- */
-  .footer {
-    flex-shrink: 0;
-    border-top: 1px solid var(--rule);
-    background: var(--bg);
-    padding: 7px 12px;
-    font-size: 9.5px;
-    color: var(--muted);
-    text-align: center;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 4px;
-  }
-  .footer .heart { display: inline-flex; color: var(--accent); }
-  .footer .author-link {
-    color: var(--ink);
-    font-weight: 600;
-    text-decoration: none;
-    border-bottom: 1px solid var(--hair);
-  }
-  .footer .author-link:hover { color: var(--accent); border-color: var(--accent); }
-</style>
-</head>
-<body>
-  <div class="masthead">
-    <span class="eyebrow">— Extension —</span>
-    <h1>Locked <em>Image</em></h1>
-    <div class="masthead-row">
-      <div class="mode-tabs">
-        <div class="mode-tab active" data-mode="bind">Bind Image</div>
-        <div class="mode-tab" data-mode="bindings">My Bindings</div>
+      .tabs {
+        display: flex;
+        border: 1px solid var(--line);
+        border-bottom: 0;
+      }
+      .tab {
+        flex: 1;
+        padding: 7px 4px;
+        background: var(--paper);
+        color: var(--muted);
+        font-size: 9.5px;
+        font-weight: 600;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        text-align: center;
+        cursor: pointer;
+        user-select: none;
+        white-space: nowrap;
+        transition:
+          background 0.15s ease,
+          color 0.15s ease;
+      }
+      .tab + .tab {
+        border-left: 1px solid var(--hair);
+      }
+      .tab:hover {
+        color: var(--ink);
+        background: var(--code-bg);
+      }
+      .tab.active {
+        background: var(--ink);
+        color: var(--bg);
+      }
+
+      .list {
+        max-height: 170px;
+        overflow-y: auto;
+        border: 1px solid var(--line);
+        background: var(--paper);
+      }
+      .item {
+        padding: 9px 11px;
+        font-size: 11.5px;
+        cursor: pointer;
+        border-bottom: 1px solid var(--hair);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        transition:
+          background 0.12s ease,
+          color 0.12s ease;
+      }
+      .item:last-child {
+        border-bottom: 0;
+      }
+      .item:hover {
+        background: var(--code-bg);
+      }
+      .item.selected {
+        background: var(--ink);
+        color: var(--bg);
+        font-weight: 600;
+      }
+      .item .item-name {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .item .item-edit {
+        flex-shrink: 0;
+        background: transparent;
+        border: 1px solid var(--hair);
+        color: var(--muted);
+        font-family: inherit;
+        font-size: 9px;
+        font-weight: 600;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        padding: 3px 8px;
+        cursor: pointer;
+        transition:
+          background 0.12s ease,
+          color 0.12s ease,
+          border-color 0.12s ease;
+      }
+      .item .item-edit:hover {
+        background: var(--ink);
+        color: var(--paper);
+        border-color: var(--ink);
+      }
+      .item.selected .item-edit {
+        border-color: rgba(255, 255, 255, 0.35);
+        color: var(--bg);
+      }
+      .item.selected .item-edit:hover {
+        background: var(--bg);
+        color: var(--ink);
+      }
+
+      .empty {
+        padding: 16px 11px;
+        font-size: 11px;
+        color: var(--muted);
+        text-align: center;
+      }
+
+      .binding-list {
+        overflow-y: auto;
+        border: 1px solid var(--line);
+        background: var(--paper);
+      }
+      .binding-item {
+        padding: 10px 11px;
+        border-bottom: 1px solid var(--hair);
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        transition: background 0.12s ease;
+      }
+      .binding-item:last-child {
+        border-bottom: 0;
+      }
+      .binding-item:hover {
+        background: var(--code-bg);
+      }
+      .binding-url {
+        font-size: 10px;
+        color: var(--muted);
+        word-break: break-all;
+        line-height: 1.4;
+      }
+      .binding-interaction {
+        font-size: 10.5px;
+        color: var(--accent);
+        font-weight: 600;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+      }
+
+      button.main-btn {
+        margin-top: var(--gap);
+        width: 100%;
+        padding: 11px;
+        border: 1px solid var(--ink);
+        background: var(--ink);
+        color: var(--bg);
+        font-family: inherit;
+        font-size: 10.5px;
+        font-weight: 600;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        cursor: pointer;
+        transition:
+          background 0.15s ease,
+          border-color 0.15s ease;
+      }
+      button.main-btn:hover {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: #fff;
+      }
+
+      button.danger {
+        margin-top: 6px;
+        padding: 5px 10px;
+        background: transparent;
+        color: var(--danger);
+        border: 1px solid var(--danger);
+        font-family: inherit;
+        font-size: 9px;
+        font-weight: 600;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        cursor: pointer;
+        transition:
+          background 0.15s ease,
+          color 0.15s ease;
+      }
+      button.danger:hover {
+        background: var(--danger);
+        color: #fff;
+      }
+
+      #status {
+        margin-top: 9px;
+        font-size: 10.5px;
+        color: var(--muted);
+        min-height: 14px;
+      }
+      #selectedInteraction {
+        margin-top: 9px;
+        font-size: 10.5px;
+        color: var(--accent);
+        font-weight: 600;
+        letter-spacing: 0.04em;
+        min-height: 14px;
+      }
+
+      :focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 1px;
+      }
+
+      /* ---- Footer ---- */
+      .footer {
+        flex-shrink: 0;
+        border-top: 1px solid var(--line);
+        background: var(--bg);
+        padding: 9px 12px;
+        font-size: 9.5px;
+        letter-spacing: 0.04em;
+        color: var(--muted);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 5px;
+      }
+      .footer .heart {
+        display: inline-flex;
+        color: var(--accent);
+      }
+      .footer .author-link {
+        color: var(--ink);
+        font-weight: 600;
+        text-decoration: none;
+        border-bottom: 1px solid var(--hair);
+        transition:
+          color 0.15s ease,
+          border-color 0.15s ease;
+      }
+      .footer .author-link:hover {
+        color: var(--accent);
+        border-color: var(--accent);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="masthead">
+      <span class="eyebrow">Extension</span>
+      <h1>Locked <em>Image</em></h1>
+      <div class="masthead-row">
+        <div class="mode-tabs">
+          <div class="mode-tab active" data-mode="bind">Bind Image</div>
+          <div class="mode-tab" data-mode="bindings">My Bindings</div>
+        </div>
+        <button
+          class="toggle-btn"
+          id="toggleInteractions"
+          title="Pause/Resume all interactions on the page"
+        >
+          ▶ On
+        </button>
       </div>
-      <button class="toggle-btn" id="toggleInteractions" title="Pause/Resume all interactions on the page">▶ On</button>
     </div>
-  </div>
 
-  <div class="scroll-content">
-    <div class="body-pad" id="bindPanel">
-      <div class="section-title">1. Select Image on Current Page</div>
-      <div class="image-picker" id="imagePicker"><div class="empty">Detecting images on page…</div></div>
+    <div class="scroll-content">
+      <div class="body-pad" id="bindPanel">
+        <div class="section-title">01 — Select image</div>
+        <div class="image-picker" id="imagePicker">
+          <div class="empty">Detecting images on page…</div>
+        </div>
 
-      <div class="section-title">2. Choose Interaction</div>
-      <div class="tabs">
-        <div class="tab active" data-tab="local">My library</div>
-        <div class="tab" data-tab="global">Global gallery</div>
-        <div class="tab" data-tab="new">Create new</div>
+        <div class="section-title">02 — Choose interaction</div>
+        <div class="tabs">
+          <div class="tab active" data-tab="local">My library</div>
+          <div class="tab" data-tab="global">Global gallery</div>
+          <div class="tab" data-tab="new">Create new</div>
+        </div>
+        <div class="list" id="list"><div class="empty">Loading…</div></div>
+        <div id="selectedInteraction"></div>
+
+        <button class="main-btn" id="save">Bind this image</button>
+        <div id="status"></div>
       </div>
-      <div class="list" id="list"><div class="empty">Loading…</div></div>
-      <div id="selectedInteraction"></div>
 
-      <button class="main-btn" id="save">Bind this image</button>
-      <div id="status"></div>
+      <div class="body-pad" id="bindingsPanel" hidden>
+        <div class="binding-list" id="bindingsList">
+          <div class="empty">Loading…</div>
+        </div>
+        <div
+          id="bindingsStatus"
+          style="margin-top: 9px; font-size: 10.5px; color: var(--muted)"
+        ></div>
+      </div>
     </div>
 
-    <div class="body-pad" id="bindingsPanel" hidden>
-      <div class="binding-list" id="bindingsList"><div class="empty">Loading…</div></div>
-      <div id="bindingsStatus" style="margin-top:8px; font-size:10.5px; color:var(--muted); font-style:italic;"></div>
+    <div class="footer">
+      Made with
+      <span class="heart">
+        <svg
+          stroke="currentColor"
+          fill="currentColor"
+          stroke-width="0"
+          viewBox="0 0 24 24"
+          height="12"
+          width="12"
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          <path
+            d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"
+          ></path>
+        </svg>
+      </span>
+      by
+      <a
+        target="_blank"
+        rel="noopener noreferrer"
+        class="author-link"
+        href="https://www.linkedin.com/in/mohit-singh-negi/"
+        >this guy</a
+      >
     </div>
-  </div>
 
-  <div class="footer">
-    Made with
-    <span class="heart">
-      <svg stroke="currentColor" fill="currentColor" stroke-width="0" viewBox="0 0 24 24" height="12" width="12" xmlns="http://www.w3.org/2000/svg">
-        <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path>
-      </svg>
-    </span>
-    by
-    <a target="_blank" rel="noopener noreferrer" class="author-link" href="https://www.linkedin.com/in/mohit-singh-negi/">this guy</a>
-  </div>
-
-  <script src="templates.js"></script>
-  <script src="popup.js"></script>
-</body>
+    <script src="templates.js"></script>
+    <script src="popup.js"></script>
+  </body>
 </html>

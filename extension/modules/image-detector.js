@@ -29,34 +29,38 @@ const ImageDetector = (() => {
   function looksLikeCandidate(img) {
     const src = resolvedSrc(img);
     if (!src) return false;
-    if (src.startsWith("data:") && src.length < 512) return false; // tiny inline placeholders/spinners
-    const w = img.naturalWidth || img.width || img.offsetWidth || 0;
-    const h = img.naturalHeight || img.height || img.offsetHeight || 0;
-    if (w && h) {
-      if (w < MIN_DIMENSION || h < MIN_DIMENSION) return false;
-      if (w * h < MIN_AREA) return false;
+    // Filter out common transparent placeholders & loading spinners
+    if (src.startsWith("data:image/gif;base64,R0lGODlhAQAB") || src.startsWith("data:image/svg") || (src.startsWith("data:") && src.length < 1024)) {
+      return false;
     }
+    const nw = img.naturalWidth || 0;
+    const nh = img.naturalHeight || 0;
+    if (nw > 0 && nh > 0 && (nw < 80 || nh < 80)) return false;
+
+    const r = img.getBoundingClientRect();
+    const w = r.width || img.offsetWidth || 0;
+    const h = r.height || img.offsetHeight || 0;
+    if (w < MIN_DIMENSION || h < MIN_DIMENSION || w * h < MIN_AREA) return false;
     return true;
   }
-
 
   function report(img) {
     if (seen.has(img)) return;
     if (!looksLikeCandidate(img)) return;
     seen.add(img);
     candidateCb(img);
-    // Observe for visibility once it's a real candidate, not before -
-    // no point tracking intersection for images we'll never process.
     io && io.observe(img);
   }
 
   function considerImg(img) {
-    if (img.complete && (img.naturalWidth > 0 || img.src.startsWith("data:"))) {
-      report(img);
+    if (!img) return;
+    if (img.complete && (img.naturalWidth > 0 || img.currentSrc)) {
+      // Small timeout to allow layout rect to settle if just inserted
+      setTimeout(() => report(img), 60);
     } else {
       img.addEventListener(
         "load",
-        () => report(img),
+        () => setTimeout(() => report(img), 60),
         { once: true }
       );
     }
