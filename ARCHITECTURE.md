@@ -1,8 +1,8 @@
-# Locked Image — Universal Interactive Asset Layer Architecture
+# Open Sesame — Universal Interactive Asset Layer Architecture
 
 ## 1. Architecture Overview
 
-Locked Image is a browser extension that attaches an interactive code overlay (HTML/CSS/Canvas/JavaScript) to images anywhere on the web. Instead of indexing images purely by volatile URLs or CDNs, images are identified by **what they look like** (perceptual visual fingerprinting) and persisted to a shared **Firebase Realtime Database**.
+Open Sesame is a browser extension that attaches an interactive code overlay (HTML/CSS/Canvas/JavaScript) to images anywhere on the web. Instead of indexing images purely by volatile URLs or CDNs, images are identified by **what they look like** (perceptual visual fingerprinting) and persisted to a shared **Firebase Realtime Database**.
 
 ```
 [Web Page <img>]

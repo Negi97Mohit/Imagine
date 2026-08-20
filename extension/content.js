@@ -1,6 +1,10 @@
 (function () {
   const overlays = new Map(); // img -> { assetId, controller }
   const identifying = new WeakSet();
+  let interactionsEnabled = true;
+  chrome.storage.local.get({ interactionsEnabled: true }, (res) => {
+    interactionsEnabled = res.interactionsEnabled !== false;
+  });
 
   function tryExtractDirectHash(img) {
     try {
@@ -84,6 +88,7 @@
     let record = { assetId, controller: null };
 
     const controller = AssetOverlay.attach(img, assetId, {
+      interactionsEnabled,
       onBindInteraction: async (interaction) => {
         controller.setBinding(interaction);
         return new Promise((resolve) => {
@@ -201,17 +206,87 @@
 
   // Handle messages from popup or background
   chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-    if (msg.type === "GET_PAGE_IMAGES") {
+    if (msg.type === "GET_PAGE_IMAGES" || msg.type === "GET_PAGE_DATA") {
       const images = [];
+      const pageBindings = [];
+      let idx = 0;
+
       document.querySelectorAll("img").forEach((img) => {
         const src = ImageDetector.resolvedSrc(img);
         const w = img.naturalWidth || img.width || img.offsetWidth || 0;
         const h = img.naturalHeight || img.height || img.offsetHeight || 0;
         if (src && w >= 140 && h >= 140) {
-          images.push({ src, width: w, height: h, alt: img.alt || "" });
+          const imgIndex = idx++;
+          img.dataset.openSesameIndex = String(imgIndex);
+          const record = overlays.get(img);
+          const activeBinding = record?.controller?.getActiveBinding?.() || null;
+          const allBindings = record?.controller?.getAllBindings?.() || [];
+
+          const imgInfo = {
+            index: imgIndex,
+            src,
+            width: w,
+            height: h,
+            alt: img.alt || "",
+            assetId: record?.assetId || null,
+            hasBinding: !!activeBinding || allBindings.length > 0,
+            interactionName: activeBinding?.name || null,
+            bindingsCount: allBindings.length,
+          };
+          images.push(imgInfo);
+
+          if (activeBinding || allBindings.length > 0) {
+            pageBindings.push({
+              index: imgIndex,
+              src,
+              assetId: record?.assetId,
+              interactionName: activeBinding?.name || allBindings[0]?.interaction?.name || "Active Interaction",
+              bindingsCount: allBindings.length || 1,
+              allBindings: allBindings.map((b) => ({
+                pushId: b.pushId,
+                name: b.interaction?.name || "Untitled",
+                createdBy: b.createdBy,
+              })),
+            });
+          }
         }
       });
-      sendResponse({ ok: true, images });
+
+      sendResponse({
+        ok: true,
+        images,
+        pageBindings,
+        totalBindings: pageBindings.length,
+      });
+      return true;
+    }
+
+    if (msg.type === "SCROLL_TO_IMAGE") {
+      let targetImg = null;
+      if (msg.index !== undefined && msg.index !== null) {
+        targetImg = document.querySelector(`img[data-open-sesame-index="${msg.index}"]`);
+      }
+      if (!targetImg && msg.src) {
+        document.querySelectorAll("img").forEach((img) => {
+          if (ImageDetector.resolvedSrc(img) === msg.src) targetImg = img;
+        });
+      }
+      if (!targetImg && msg.assetId) {
+        overlays.forEach((record, img) => {
+          if (record.assetId === msg.assetId) targetImg = img;
+        });
+      }
+      if (targetImg) {
+        const record = overlays.get(targetImg);
+        if (record && record.controller && record.controller.highlightAndScroll) {
+          record.controller.highlightAndScroll();
+        } else {
+          targetImg.scrollIntoView({ behavior: "smooth", block: "center" });
+        }
+        sendResponse({ ok: true });
+      } else {
+        sendResponse({ ok: false });
+      }
       return true;
     }
     if (msg.type === "ASSET_BINDING_CHANGED" && msg.assetId) {
@@ -237,6 +312,7 @@
       syncActiveOverlays();
     }
     if (msg.type === "TOGGLE_INTERACTIONS") {
+      interactionsEnabled = msg.enabled;
       overlays.forEach((record) => {
         record.controller.setInteractionsEnabled(msg.enabled);
       });

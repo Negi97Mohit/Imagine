@@ -174,15 +174,18 @@ async function renderEditorBindings() {
       if (!confirm("Unbind this image? Only your interaction is removed — anyone else's binding for the same image is untouched.")) return;
       removeBtn.disabled = true;
       removeBtn.textContent = "…";
-      chrome.runtime.sendMessage({ type: "DELETE_BINDING", url: b.url, entryId: b.entryId }, async (res) => {
+      chrome.runtime.sendMessage({ type: "DELETE_ASSET_BINDING", assetId: b.assetId, pushId: b.pushId }, async (res) => {
         if (res && res.ok) {
           const { myBindings: current = [] } = await chrome.storage.local.get("myBindings");
-          await chrome.storage.local.set({ myBindings: current.filter((x) => x.url !== b.url) });
+          const updated = b.pushId
+            ? current.filter((x) => x.pushId !== b.pushId)
+            : current.filter((x) => x.assetId !== b.assetId);
+          await chrome.storage.local.set({ myBindings: updated });
           renderEditorBindings();
         } else {
           removeBtn.disabled = false;
           removeBtn.textContent = "Remove";
-          alert("Failed to remove — check FIREBASE_PROJECT_ID in background.js and your Firestore rules.");
+          alert("Failed to remove binding.");
         }
       });
     });

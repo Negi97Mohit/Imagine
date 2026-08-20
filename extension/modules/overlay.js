@@ -44,7 +44,7 @@ const AssetOverlay = (() => {
     return el;
   }
 
-  function attach(img, assetId, { onBindInteraction, onUnbind } = {}) {
+  function attach(img, assetId, { onBindInteraction, onUnbind, interactionsEnabled: initialEnabled } = {}) {
     let activeBinding = null;    // currently displayed interaction
     let allBindings = [];        // all bindings for this image [{pushId, interaction, createdBy, ...}]
     let myUserId = null;         // this browser's anonymous ID
@@ -52,10 +52,20 @@ const AssetOverlay = (() => {
     let menuEl = null;
     let destroyed = false;
     let rafPending = false;
+    let hoverLeaveTimeout = null;
 
-    let interactionsEnabled = true;
+    let isImgHovered = false;
+    let isPinHovered = false;
+
+    let interactionsEnabled = initialEnabled !== undefined ? initialEnabled : true;
     chrome.storage.local.get({ interactionsEnabled: true }, (res) => {
       interactionsEnabled = res.interactionsEnabled !== false;
+      if (!interactionsEnabled) {
+        pin.style.display = "none";
+        badge.style.display = "none";
+        deactivateSandbox();
+        closeMenu();
+      }
     });
 
     // Fetch anonymous user ID
@@ -82,6 +92,13 @@ const AssetOverlay = (() => {
       return r.bottom < 0 || r.top > window.innerHeight || r.right < 0 || r.left > window.innerWidth;
     }
 
+    function isPinVisible() {
+      if (!interactionsEnabled || destroyed) return false;
+      const r = rect();
+      if (offscreen(r) || isTooSmall(r)) return false;
+      return isImgHovered || isPinHovered || !!menuEl || !!overlayIframe;
+    }
+
     const container = makeEl(
       "div",
       "position:fixed;left:0;top:0;width:100vw;height:100vh;pointer-events:none;z-index:2147483646;overflow:visible;"
@@ -90,7 +107,7 @@ const AssetOverlay = (() => {
     const pin = makeEl(
       "div",
       "position:fixed;width:24px;height:24px;border-radius:50%;" +
-        "background:#b8410e;color:#ffffff;display:flex;align-items:center;" +
+        "background:#b8410e;color:#ffffff;display:none;align-items:center;" +
         "justify-content:center;font-size:16px;font-weight:700;cursor:pointer;pointer-events:auto;" +
         "opacity:0.85;transition:opacity 0.15s ease, transform 0.15s ease;box-shadow:0 2px 8px rgba(0,0,0,0.45);" +
         "user-select:none;z-index:2147483647;"
@@ -116,7 +133,7 @@ const AssetOverlay = (() => {
 
     function updateBadge() {
       const visible = allBindings.filter((b) => !hiddenPushIds.has(b.pushId));
-      if (visible.length > 1) {
+      if (visible.length > 1 && isPinVisible()) {
         badge.style.display = "flex";
         badge.textContent = String(visible.length);
       } else {
@@ -148,7 +165,7 @@ const AssetOverlay = (() => {
     function syncRect() {
       if (destroyed) return;
       const r = rect();
-      if (offscreen(r) || isTooSmall(r)) {
+      if (offscreen(r) || isTooSmall(r) || !interactionsEnabled) {
         pin.style.display = "none";
         badge.style.display = "none";
         deactivateSandbox();
@@ -165,13 +182,26 @@ const AssetOverlay = (() => {
       currentPinLeft = Math.max(visLeft + 6, Math.min(visRight - 30, r.right - 30));
       currentPinTop = Math.max(visTop + 6, Math.min(visBottom - 30, r.top + 6));
 
-      pin.style.display = "flex";
       pin.style.left = currentPinLeft + "px";
       pin.style.top = currentPinTop + "px";
 
       badge.style.left = (currentPinLeft + 14) + "px";
       badge.style.top = (currentPinTop - 4) + "px";
-      updateBadge();
+
+      if (isPinVisible()) {
+        pin.style.display = "flex";
+        if (isPinHovered) {
+          pin.style.opacity = "1";
+          pin.style.transform = "scale(1.15)";
+        } else {
+          pin.style.opacity = "0.85";
+          pin.style.transform = "scale(1)";
+        }
+        updateBadge();
+      } else {
+        pin.style.display = "none";
+        badge.style.display = "none";
+      }
 
       if (overlayIframe) {
         overlayIframe.style.left = r.left + "px";
@@ -464,6 +494,12 @@ const AssetOverlay = (() => {
       if (menuEl) {
         menuEl.remove();
         menuEl = null;
+        if (hoverLeaveTimeout) clearTimeout(hoverLeaveTimeout);
+        hoverLeaveTimeout = setTimeout(() => {
+          if (!isPinVisible()) {
+            syncRect();
+          }
+        }, 50);
       }
     }
 
@@ -491,7 +527,7 @@ const AssetOverlay = (() => {
     function activateSandbox() {
       if (!interactionsEnabled || !activeBinding || overlayIframe || menuEl) return;
       const r = rect();
-      if (isTooSmall(r)) return;
+      if (isTooSmall(r) || offscreen(r)) return;
 
       overlayIframe = document.createElement("iframe");
       overlayIframe.src = chrome.runtime.getURL("sandbox.html");
@@ -542,6 +578,12 @@ const AssetOverlay = (() => {
         }
         if (msg.type === "LEAVE") {
           deactivateSandbox();
+          if (hoverLeaveTimeout) clearTimeout(hoverLeaveTimeout);
+          hoverLeaveTimeout = setTimeout(() => {
+            if (!isPinVisible()) {
+              syncRect();
+            }
+          }, 50);
         }
       }
       window.addEventListener("message", onMsg);
@@ -556,27 +598,43 @@ const AssetOverlay = (() => {
     }
 
     img.addEventListener("pointerenter", () => {
+      if (!interactionsEnabled) return;
+      if (hoverLeaveTimeout) {
+        clearTimeout(hoverLeaveTimeout);
+        hoverLeaveTimeout = null;
+      }
       const r = rect();
-      if (isTooSmall(r)) return;
-      pin.style.opacity = "1";
-      pin.style.transform = "scale(1.15)";
+      if (isTooSmall(r) || offscreen(r)) return;
+      isImgHovered = true;
+      syncRect();
       activateSandbox();
     });
-    img.addEventListener("pointerleave", (e) => {
-      if (!menuEl) {
-        pin.style.opacity = "0.85";
-        pin.style.transform = "scale(1)";
-      }
+    img.addEventListener("pointerleave", () => {
+      isImgHovered = false;
+      if (hoverLeaveTimeout) clearTimeout(hoverLeaveTimeout);
+      hoverLeaveTimeout = setTimeout(() => {
+        if (!isPinVisible()) {
+          syncRect();
+        }
+      }, 50);
     });
     pin.addEventListener("pointerenter", () => {
-      pin.style.opacity = "1";
-      pin.style.transform = "scale(1.15)";
+      if (!interactionsEnabled) return;
+      if (hoverLeaveTimeout) {
+        clearTimeout(hoverLeaveTimeout);
+        hoverLeaveTimeout = null;
+      }
+      isPinHovered = true;
+      syncRect();
     });
     pin.addEventListener("pointerleave", () => {
-      if (!menuEl) {
-        pin.style.opacity = "0.85";
-        pin.style.transform = "scale(1)";
-      }
+      isPinHovered = false;
+      if (hoverLeaveTimeout) clearTimeout(hoverLeaveTimeout);
+      hoverLeaveTimeout = setTimeout(() => {
+        if (!isPinVisible()) {
+          syncRect();
+        }
+      }, 50);
     });
 
     window.addEventListener("scroll", onScrollOrResize, { passive: true, capture: true });
@@ -592,7 +650,7 @@ const AssetOverlay = (() => {
           deactivateSandbox();
         } else {
           deactivateSandbox();
-          activateSandbox();
+          if (isPinVisible()) activateSandbox();
         }
         updateBadge();
       },
@@ -612,15 +670,46 @@ const AssetOverlay = (() => {
         } else if (overlayIframe && prevBindingName && (activeBinding.name || "") !== prevBindingName) {
           // Only re-mount sandbox IF the active interaction actually changed to a different one
           deactivateSandbox();
-          activateSandbox();
+          if (isPinVisible()) activateSandbox();
         }
       },
       setInteractionsEnabled(enabled) {
-        interactionsEnabled = enabled;
-        if (!enabled) deactivateSandbox();
+        interactionsEnabled = !!enabled;
+        if (!interactionsEnabled) {
+          deactivateSandbox();
+          closeMenu();
+          pin.style.display = "none";
+          badge.style.display = "none";
+        } else {
+          syncRect();
+        }
+      },
+      getActiveBinding() {
+        return activeBinding;
+      },
+      getAllBindings() {
+        return allBindings;
+      },
+      highlightAndScroll() {
+        img.scrollIntoView({ behavior: "smooth", block: "center" });
+        const prevTransition = img.style.transition;
+        const prevOutline = img.style.outline;
+        const prevBoxShadow = img.style.boxShadow;
+        img.style.transition = "box-shadow 0.25s ease, outline 0.25s ease";
+        img.style.outline = "3px solid #b8410e";
+        img.style.boxShadow = "0 0 25px rgba(184, 65, 14, 0.75)";
+        isImgHovered = true;
+        syncRect();
+        activateSandbox();
+        setTimeout(() => {
+          img.style.outline = prevOutline;
+          img.style.boxShadow = prevBoxShadow;
+          img.style.transition = prevTransition;
+        }, 2200);
       },
       destroy() {
         destroyed = true;
+        if (hoverLeaveTimeout) clearTimeout(hoverLeaveTimeout);
         deactivateSandbox();
         closeMenu();
         window.removeEventListener("keydown", onKeyDown);

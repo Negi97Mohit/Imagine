@@ -1,5 +1,5 @@
 <!doctype html>
-<html>
+<html lang="en">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -11,49 +11,53 @@
     />
     <style>
       :root {
-        --bg: #f4f1ec;
+        --bg: #f5f2eb;
         --paper: #ffffff;
-        --ink: #0a0a0a;
-        --muted: #8a8378;
-        --hair: rgba(10, 10, 10, 0.1);
-        --line: rgba(10, 10, 10, 0.85);
+        --ink: #141413;
+        --muted: #7d7568;
+        --hair: rgba(20, 20, 19, 0.08);
+        --line: rgba(20, 20, 19, 0.16);
         --accent: #b8410e;
-        --code-bg: #efeae2;
+        --accent-soft: rgba(184, 65, 14, 0.09);
+        --code-bg: #ece7de;
         --danger: #c53a2a;
-        --pad: 14px;
-        --gap: 14px;
+        --radius-sm: 4px;
+        --radius-md: 6px;
+        --radius-lg: 8px;
       }
+
       * {
         box-sizing: border-box;
+        margin: 0;
+        padding: 0;
         scrollbar-width: thin;
-        scrollbar-color: var(--hair) transparent;
+        scrollbar-color: var(--line) transparent;
       }
+
       ::-webkit-scrollbar {
-        width: 3px;
-        height: 3px;
+        width: 4px;
       }
       ::-webkit-scrollbar-track {
         background: transparent;
       }
       ::-webkit-scrollbar-thumb {
-        background: rgba(10, 10, 10, 0.25);
+        background: var(--line);
+        border-radius: 4px;
       }
       ::-webkit-scrollbar-thumb:hover {
         background: var(--accent);
       }
 
-      html,
-      body {
+      html, body {
         height: 100%;
       }
+
       body {
-        width: 100%;
-        min-width: 300px;
-        max-width: 420px;
-        min-height: 440px;
-        max-height: 600px;
+        width: 360px;
+        min-height: 460px;
+        max-height: 540px;
         margin: 0 auto;
-        font-family: "Inter", system-ui, sans-serif;
+        font-family: "Inter", -apple-system, BlinkMacSystemFont, sans-serif;
         font-size: 12px;
         line-height: 1.45;
         background: var(--bg);
@@ -63,382 +67,413 @@
         overflow: hidden;
         -webkit-font-smoothing: antialiased;
       }
-      @media (min-width: 480px) {
-        body {
-          width: 400px;
-        }
-      }
 
-      /* ---- Header ---- */
+      /* ---- Masthead ---- */
       .masthead {
         flex-shrink: 0;
-        padding: var(--pad);
+        padding: 14px 16px 12px;
         background: var(--bg);
         border-bottom: 1px solid var(--line);
       }
-      .eyebrow {
-        font-size: 8.5px;
-        letter-spacing: 0.22em;
-        text-transform: uppercase;
-        color: var(--muted);
-        font-weight: 600;
-        display: block;
+
+      .masthead-top {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
       }
-      h1 {
-        font-size: 20px;
+
+      .brand {
+        font-size: 16px;
         font-weight: 700;
-        margin: 4px 0 0;
-        line-height: 1;
         letter-spacing: -0.03em;
+        color: var(--ink);
       }
-      h1 em {
+      .brand em {
         font-style: normal;
         font-weight: 400;
         color: var(--accent);
       }
 
-      .masthead-row {
-        display: flex;
-        align-items: stretch;
-        gap: 6px;
-        margin-top: 14px;
-      }
-
-      .mode-tabs {
-        display: flex;
-        flex: 1 1 auto;
-        border: 1px solid var(--line);
-      }
-      .mode-tab {
-        flex: 1;
-        padding: 7px 8px;
-        background: var(--paper);
-        color: var(--muted);
-        font-size: 10px;
-        font-weight: 600;
-        letter-spacing: 0.06em;
-        text-transform: uppercase;
-        text-align: center;
-        cursor: pointer;
-        user-select: none;
-        white-space: nowrap;
-        transition:
-          background 0.15s ease,
-          color 0.15s ease;
-      }
-      .mode-tab + .mode-tab {
-        border-left: 1px solid var(--line);
-      }
-      .mode-tab:hover {
-        color: var(--ink);
-        background: var(--code-bg);
-      }
-      .mode-tab.active {
-        background: var(--ink);
-        color: var(--bg);
-      }
-
-      .toggle-btn {
-        flex: 0 0 auto;
-        background: var(--paper);
-        border: 1px solid var(--line);
-        color: var(--ink);
-        font-family: inherit;
-        font-size: 10px;
-        font-weight: 600;
-        letter-spacing: 0.06em;
-        text-transform: uppercase;
-        padding: 0 11px;
-        cursor: pointer;
-        white-space: nowrap;
-        transition:
-          background 0.15s ease,
-          color 0.15s ease;
-      }
-      .toggle-btn:hover {
-        background: var(--ink);
-        color: var(--bg);
-      }
-      .toggle-btn.paused {
-        background: var(--accent);
-        border-color: var(--accent);
-        color: #fff;
-      }
-
-      /* ---- Content ---- */
-      .scroll-content {
-        flex: 1 1 auto;
-        overflow-y: auto;
-        overscroll-behavior: contain;
-      }
-      .body-pad {
-        padding: var(--pad);
-      }
-
-      .section-title {
-        font-size: 9px;
-        text-transform: uppercase;
-        letter-spacing: 0.16em;
-        color: var(--muted);
-        font-weight: 600;
-        margin: 0 0 8px;
-        display: flex;
+      .toggle-pill {
+        display: inline-flex;
         align-items: center;
-        gap: 8px;
-      }
-      .section-title::after {
-        content: "";
-        flex: 1;
-        height: 1px;
-        background: var(--hair);
-      }
-      .section-title + * + .section-title {
-        margin-top: var(--gap);
-      }
-
-      .image-picker {
-        display: flex;
-        gap: 6px;
-        overflow-x: auto;
-        padding: 0 0 10px;
-        scroll-snap-type: x proximity;
-      }
-      .img-thumb {
-        width: 66px;
-        aspect-ratio: 1 / 1;
-        height: auto;
-        flex-shrink: 0;
-        object-fit: cover;
-        border: 1px solid var(--hair);
-        outline: 2px solid transparent;
-        outline-offset: -1px;
-        cursor: pointer;
-        background: var(--code-bg);
-        scroll-snap-align: start;
-        transition:
-          outline-color 0.15s ease,
-          border-color 0.15s ease;
-      }
-      .img-thumb:hover {
-        border-color: var(--line);
-      }
-      .img-thumb.selected {
-        border-color: var(--accent);
-        outline-color: var(--accent);
-      }
-
-      .tabs {
-        display: flex;
-        border: 1px solid var(--line);
-        border-bottom: 0;
-      }
-      .tab {
-        flex: 1;
-        padding: 7px 4px;
+        gap: 5px;
         background: var(--paper);
-        color: var(--muted);
+        border: 1px solid var(--line);
+        border-radius: 20px;
+        padding: 4px 9px;
         font-size: 9.5px;
         font-weight: 600;
-        letter-spacing: 0.06em;
         text-transform: uppercase;
-        text-align: center;
+        letter-spacing: 0.05em;
         cursor: pointer;
-        user-select: none;
-        white-space: nowrap;
-        transition:
-          background 0.15s ease,
-          color 0.15s ease;
-      }
-      .tab + .tab {
-        border-left: 1px solid var(--hair);
-      }
-      .tab:hover {
         color: var(--ink);
-        background: var(--code-bg);
+        transition: all 0.15s ease;
       }
-      .tab.active {
-        background: var(--ink);
-        color: var(--bg);
+      .toggle-pill:hover {
+        border-color: var(--ink);
+      }
+      .toggle-pill .status-dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: #16a34a;
+        transition: background 0.15s ease;
+      }
+      .toggle-pill.paused {
+        background: #fef2f2;
+        border-color: #fca5a5;
+        color: var(--danger);
+      }
+      .toggle-pill.paused .status-dot {
+        background: var(--danger);
       }
 
-      .list {
-        max-height: 170px;
-        overflow-y: auto;
-        border: 1px solid var(--line);
-        background: var(--paper);
+      /* ---- Navigation Tabs ---- */
+      .nav-tabs {
+        display: flex;
+        margin-top: 10px;
+        background: var(--code-bg);
+        padding: 2px;
+        border-radius: var(--radius-md);
+        gap: 2px;
       }
-      .item {
-        padding: 9px 11px;
-        font-size: 11.5px;
+      .nav-tab {
+        flex: 1;
+        text-align: center;
+        padding: 6px 4px;
+        font-size: 10px;
+        font-weight: 600;
+        letter-spacing: 0.02em;
+        color: var(--muted);
+        border-radius: var(--radius-sm);
         cursor: pointer;
-        border-bottom: 1px solid var(--hair);
+        user-select: none;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 4px;
+        transition: all 0.15s ease;
+      }
+      .nav-tab:hover {
+        color: var(--ink);
+      }
+      .nav-tab.active {
+        background: var(--paper);
+        color: var(--ink);
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+      }
+      .tab-count {
+        display: inline-block;
+        padding: 1px 5px;
+        border-radius: 10px;
+        font-size: 8.5px;
+        background: rgba(0, 0, 0, 0.08);
+        color: var(--muted);
+      }
+      .nav-tab.active .tab-count {
+        background: var(--ink);
+        color: #fff;
+      }
+      .tab-count.has-count {
+        background: var(--accent) !important;
+        color: #fff !important;
+      }
+
+      /* ---- Content Body ---- */
+      .content-body {
+        flex: 1 1 auto;
+        overflow-y: auto;
+        padding: 14px 16px;
+      }
+
+      /* ---- Panel Section Headers ---- */
+      .section-label {
+        font-size: 9.5px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.12em;
+        color: var(--muted);
+        margin-bottom: 8px;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+
+      /* ---- On Page Bindings Cards ---- */
+      .binding-cards {
+        display: flex;
+        flex-direction: column;
+        gap: 7px;
+      }
+      .binding-card {
         display: flex;
         align-items: center;
         justify-content: space-between;
-        gap: 8px;
-        transition:
-          background 0.12s ease,
-          color 0.12s ease;
+        gap: 10px;
+        padding: 11px 12px;
+        background: var(--paper);
+        border: 1px solid var(--line);
+        border-radius: var(--radius-lg);
+        cursor: pointer;
+        transition: all 0.15s ease;
       }
-      .item:last-child {
-        border-bottom: 0;
+      .binding-card:hover {
+        border-color: var(--accent);
+        transform: translateY(-1px);
+        box-shadow: 0 3px 8px rgba(184, 65, 14, 0.08);
       }
-      .item:hover {
-        background: var(--code-bg);
+      .binding-card.scrolled-active {
+        border-color: var(--accent);
+        background: var(--accent-soft);
       }
-      .item.selected {
-        background: var(--ink);
-        color: var(--bg);
-        font-weight: 600;
-      }
-      .item .item-name {
-        flex: 1;
+      .card-left {
+        display: flex;
+        align-items: center;
+        gap: 10px;
         min-width: 0;
+      }
+      .card-icon {
+        width: 28px;
+        height: 28px;
+        border-radius: 50%;
+        background: var(--accent-soft);
+        color: var(--accent);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 13px;
+        flex-shrink: 0;
+      }
+      .card-info {
+        min-width: 0;
+      }
+      .card-title {
+        font-size: 12px;
+        font-weight: 700;
+        color: var(--ink);
+        letter-spacing: -0.01em;
+        white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
-        white-space: nowrap;
       }
-      .item .item-edit {
-        flex-shrink: 0;
-        background: transparent;
-        border: 1px solid var(--hair);
-        color: var(--muted);
-        font-family: inherit;
-        font-size: 9px;
-        font-weight: 600;
-        letter-spacing: 0.08em;
-        text-transform: uppercase;
-        padding: 3px 8px;
-        cursor: pointer;
-        transition:
-          background 0.12s ease,
-          color 0.12s ease,
-          border-color 0.12s ease;
-      }
-      .item .item-edit:hover {
-        background: var(--ink);
-        color: var(--paper);
-        border-color: var(--ink);
-      }
-      .item.selected .item-edit {
-        border-color: rgba(255, 255, 255, 0.35);
-        color: var(--bg);
-      }
-      .item.selected .item-edit:hover {
-        background: var(--bg);
-        color: var(--ink);
-      }
-
-      .empty {
-        padding: 16px 11px;
-        font-size: 11px;
-        color: var(--muted);
-        text-align: center;
-      }
-
-      .binding-list {
-        overflow-y: auto;
-        border: 1px solid var(--line);
-        background: var(--paper);
-      }
-      .binding-item {
-        padding: 10px 11px;
-        border-bottom: 1px solid var(--hair);
-        display: flex;
-        flex-direction: column;
-        gap: 4px;
-        transition: background 0.12s ease;
-      }
-      .binding-item:last-child {
-        border-bottom: 0;
-      }
-      .binding-item:hover {
-        background: var(--code-bg);
-      }
-      .binding-url {
+      .card-sub {
         font-size: 10px;
         color: var(--muted);
-        word-break: break-all;
-        line-height: 1.4;
+        margin-top: 1px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
       }
-      .binding-interaction {
-        font-size: 10.5px;
-        color: var(--accent);
-        font-weight: 600;
-        letter-spacing: 0.04em;
+      .card-action-btn {
+        flex-shrink: 0;
+        font-size: 9.5px;
+        font-weight: 700;
         text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--accent);
+        background: transparent;
+        border: 1px solid rgba(184, 65, 14, 0.3);
+        border-radius: var(--radius-sm);
+        padding: 4px 7px;
+        pointer-events: none;
+        transition: all 0.15s ease;
+      }
+      .binding-card:hover .card-action-btn {
+        background: var(--accent);
+        color: #fff;
+        border-color: var(--accent);
       }
 
-      button.main-btn {
-        margin-top: var(--gap);
-        width: 100%;
-        padding: 11px;
-        border: 1px solid var(--ink);
-        background: var(--ink);
-        color: var(--bg);
-        font-family: inherit;
-        font-size: 10.5px;
-        font-weight: 600;
-        letter-spacing: 0.14em;
-        text-transform: uppercase;
-        cursor: pointer;
-        transition:
-          background 0.15s ease,
-          border-color 0.15s ease;
+      /* ---- Bind Form ---- */
+      .form-group {
+        margin-bottom: 12px;
       }
-      button.main-btn:hover {
-        background: var(--accent);
+      .clean-select {
+        width: 100%;
+        padding: 8px 10px;
+        background: var(--paper);
+        border: 1px solid var(--line);
+        border-radius: var(--radius-md);
+        font-family: inherit;
+        font-size: 11px;
+        color: var(--ink);
+        outline: none;
+        transition: border-color 0.15s ease;
+      }
+      .clean-select:focus {
         border-color: var(--accent);
+      }
+
+      .pill-tabs {
+        display: flex;
+        gap: 4px;
+        margin-bottom: 8px;
+      }
+      .pill-tab {
+        flex: 1;
+        text-align: center;
+        padding: 5px;
+        font-size: 9.5px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        background: var(--paper);
+        border: 1px solid var(--hair);
+        border-radius: var(--radius-sm);
+        color: var(--muted);
+        cursor: pointer;
+        transition: all 0.12s ease;
+      }
+      .pill-tab:hover {
+        color: var(--ink);
+      }
+      .pill-tab.active {
+        background: var(--ink);
+        border-color: var(--ink);
         color: #fff;
       }
 
-      button.danger {
-        margin-top: 6px;
-        padding: 5px 10px;
-        background: transparent;
-        color: var(--danger);
-        border: 1px solid var(--danger);
-        font-family: inherit;
+      .interaction-list {
+        max-height: 160px;
+        overflow-y: auto;
+        border: 1px solid var(--line);
+        border-radius: var(--radius-md);
+        background: var(--paper);
+      }
+      .interaction-item {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 8px 10px;
+        border-bottom: 1px solid var(--hair);
+        cursor: pointer;
+        font-size: 11px;
+        transition: all 0.12s ease;
+      }
+      .interaction-item:last-child {
+        border-bottom: 0;
+      }
+      .interaction-item:hover {
+        background: var(--code-bg);
+      }
+      .interaction-item.selected {
+        background: var(--accent-soft);
+        color: var(--accent);
+        font-weight: 700;
+      }
+      .interaction-item .edit-link {
         font-size: 9px;
-        font-weight: 600;
-        letter-spacing: 0.08em;
+        color: var(--muted);
+        border: 1px solid var(--hair);
+        padding: 2px 5px;
+        border-radius: 3px;
+        background: var(--paper);
+      }
+      .interaction-item .edit-link:hover {
+        color: var(--ink);
+        border-color: var(--ink);
+      }
+
+      /* ---- Buttons ---- */
+      .primary-btn {
+        width: 100%;
+        padding: 10px 12px;
+        background: var(--ink);
+        color: #fff;
+        border: 1px solid var(--ink);
+        border-radius: var(--radius-md);
+        font-family: inherit;
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.06em;
         text-transform: uppercase;
         cursor: pointer;
-        transition:
-          background 0.15s ease,
-          color 0.15s ease;
+        transition: all 0.15s ease;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
       }
-      button.danger:hover {
+      .primary-btn:hover {
+        background: var(--accent);
+        border-color: var(--accent);
+      }
+      .primary-btn:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+      }
+
+      .empty-state {
+        padding: 28px 12px;
+        text-align: center;
+        background: var(--paper);
+        border: 1px dashed var(--line);
+        border-radius: var(--radius-lg);
+        color: var(--muted);
+        font-size: 11px;
+      }
+      .empty-state .icon {
+        font-size: 20px;
+        margin-bottom: 6px;
+      }
+
+      /* ---- Status Messages ---- */
+      #status, #selectedInteraction {
+        margin-top: 8px;
+        font-size: 10.5px;
+        min-height: 14px;
+      }
+      #status {
+        color: var(--muted);
+      }
+
+      /* ---- My Bindings List ---- */
+      .saved-binding-item {
+        padding: 9px 10px;
+        background: var(--paper);
+        border: 1px solid var(--line);
+        border-radius: var(--radius-md);
+        margin-bottom: 6px;
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+      }
+      .saved-binding-name {
+        font-size: 11px;
+        font-weight: 700;
+        color: var(--accent);
+      }
+      .saved-binding-url {
+        font-size: 9.5px;
+        color: var(--muted);
+        word-break: break-all;
+      }
+      .danger-btn {
+        align-self: flex-start;
+        margin-top: 4px;
+        background: transparent;
+        border: 1px solid var(--danger);
+        color: var(--danger);
+        padding: 2px 6px;
+        border-radius: 3px;
+        font-size: 8.5px;
+        font-weight: 600;
+        text-transform: uppercase;
+        cursor: pointer;
+      }
+      .danger-btn:hover {
         background: var(--danger);
         color: #fff;
       }
 
-      #status {
-        margin-top: 9px;
-        font-size: 10.5px;
-        color: var(--muted);
-        min-height: 14px;
-      }
-      #selectedInteraction {
-        margin-top: 9px;
-        font-size: 10.5px;
-        color: var(--accent);
-        font-weight: 600;
-        letter-spacing: 0.04em;
-        min-height: 14px;
-      }
-
-      :focus-visible {
-        outline: 2px solid var(--accent);
-        outline-offset: 1px;
-      }
-
-      /* ---- Footer ---- */
+      /* ---- Sticky Footer ---- */
       .footer {
         flex-shrink: 0;
-        border-top: 1px solid var(--line);
+        padding: 9px 16px;
+        border-top: 1px solid var(--hair);
         background: var(--bg);
-        padding: 9px 12px;
         font-size: 9.5px;
         letter-spacing: 0.04em;
         color: var(--muted);
@@ -446,6 +481,7 @@
         align-items: center;
         justify-content: center;
         gap: 5px;
+        z-index: 50;
       }
       .footer .heart {
         display: inline-flex;
@@ -456,9 +492,7 @@
         font-weight: 600;
         text-decoration: none;
         border-bottom: 1px solid var(--hair);
-        transition:
-          color 0.15s ease,
-          border-color 0.15s ease;
+        transition: color 0.15s ease, border-color 0.15s ease;
       }
       .footer .author-link:hover {
         color: var(--accent);
@@ -467,80 +501,89 @@
     </style>
   </head>
   <body>
-    <div class="masthead">
-      <span class="eyebrow">Extension</span>
-      <h1>Locked <em>Image</em></h1>
-      <div class="masthead-row">
-        <div class="mode-tabs">
-          <div class="mode-tab active" data-mode="bind">Bind Image</div>
-          <div class="mode-tab" data-mode="bindings">My Bindings</div>
-        </div>
-        <button
-          class="toggle-btn"
-          id="toggleInteractions"
-          title="Pause/Resume all interactions on the page"
-        >
-          ▶ On
+    <!-- Masthead -->
+    <header class="masthead">
+      <div class="masthead-top">
+        <div class="brand">Open <em>Sesame</em></div>
+        <button class="toggle-pill" id="toggleInteractions" title="Pause or resume all overlays">
+          <span class="status-dot"></span>
+          <span id="toggleText">Active</span>
         </button>
       </div>
-    </div>
 
-    <div class="scroll-content">
-      <div class="body-pad" id="bindPanel">
-        <div class="section-title">01 — Select image</div>
-        <div class="image-picker" id="imagePicker">
-          <div class="empty">Detecting images on page…</div>
+      <!-- Navigation Tabs -->
+      <nav class="nav-tabs">
+        <div class="nav-tab active" data-mode="pageBindings">
+          <span>On Page</span>
+          <span class="tab-count" id="pageBindingsCount">0</span>
+        </div>
+        <div class="nav-tab" data-mode="bind">
+          <span>Bind Image</span>
+        </div>
+        <div class="nav-tab" data-mode="bindings">
+          <span>My Library</span>
+        </div>
+      </nav>
+    </header>
+
+    <!-- Scrollable Content -->
+    <main class="content-body">
+      <!-- 1. On Page Panel -->
+      <section id="pageBindingsPanel">
+        <div class="section-label">Active on this webpage</div>
+        <div class="binding-cards" id="pageBindingsList">
+          <div class="empty-state">
+            <div class="icon">✦</div>
+            Scanning page for interactive images…
+          </div>
+        </div>
+      </section>
+
+      <!-- 2. Bind New Panel -->
+      <section id="bindPanel" hidden>
+        <div class="form-group">
+          <div class="section-label">Select target image</div>
+          <select id="imageSelect" class="clean-select">
+            <option value="">Detecting images on page…</option>
+          </select>
         </div>
 
-        <div class="section-title">02 — Choose interaction</div>
-        <div class="tabs">
-          <div class="tab active" data-tab="local">My library</div>
-          <div class="tab" data-tab="global">Global gallery</div>
-          <div class="tab" data-tab="new">Create new</div>
+        <div class="form-group">
+          <div class="section-label">Choose interaction</div>
+          <div class="pill-tabs">
+            <div class="pill-tab active" data-tab="local">Templates</div>
+            <div class="pill-tab" data-tab="global">Gallery</div>
+            <div class="pill-tab" data-tab="new">+ Create</div>
+          </div>
+          <div class="interaction-list" id="list">
+            <div class="empty-state">Loading interactions…</div>
+          </div>
+          <div id="selectedInteraction"></div>
         </div>
-        <div class="list" id="list"><div class="empty">Loading…</div></div>
-        <div id="selectedInteraction"></div>
 
-        <button class="main-btn" id="save">Bind this image</button>
+        <button class="primary-btn" id="save">Bind to Selected Image</button>
         <div id="status"></div>
-      </div>
+      </section>
 
-      <div class="body-pad" id="bindingsPanel" hidden>
-        <div class="binding-list" id="bindingsList">
-          <div class="empty">Loading…</div>
+      <!-- 3. My Library / Bindings Panel -->
+      <section id="bindingsPanel" hidden>
+        <div class="section-label">Your saved bindings</div>
+        <div id="bindingsList">
+          <div class="empty-state">Loading saved bindings…</div>
         </div>
-        <div
-          id="bindingsStatus"
-          style="margin-top: 9px; font-size: 10.5px; color: var(--muted)"
-        ></div>
-      </div>
-    </div>
+        <div id="bindingsStatus" style="margin-top: 8px; font-size: 10px; color: var(--muted);"></div>
+      </section>
+    </main>
 
     <div class="footer">
       Made with
       <span class="heart">
-        <svg
-          stroke="currentColor"
-          fill="currentColor"
-          stroke-width="0"
-          viewBox="0 0 24 24"
-          height="12"
-          width="12"
-          xmlns="http://www.w3.org/2000/svg"
-        >
-          <path
-            d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"
-          ></path>
+        <svg stroke="currentColor" fill="currentColor" stroke-width="0" viewBox="0 0 24 24" height="12" width="12" xmlns="http://www.w3.org/2000/svg">
+          <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path>
         </svg>
       </span>
       by
-      <a
-        target="_blank"
-        rel="noopener noreferrer"
-        class="author-link"
-        href="https://www.linkedin.com/in/mohit-singh-negi/"
-        >this guy</a
-      >
+      <a target="_blank" rel="noopener noreferrer" class="author-link" href="https://www.linkedin.com/in/mohit-singh-negi/">this guy</a>
     </div>
 
     <script src="templates.js"></script>

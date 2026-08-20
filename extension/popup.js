@@ -1,22 +1,28 @@
-const imagePickerEl = document.getElementById("imagePicker");
-const tabs = document.querySelectorAll(".tab");
+const imageSelect = document.getElementById("imageSelect");
+const pillTabs = document.querySelectorAll(".pill-tab");
 const list = document.getElementById("list");
 const selectedInteractionEl = document.getElementById("selectedInteraction");
 const saveBtn = document.getElementById("save");
 const statusEl = document.getElementById("status");
-const modeTabs = document.querySelectorAll(".mode-tab");
+const navTabs = document.querySelectorAll(".nav-tab");
+const pageBindingsPanel = document.getElementById("pageBindingsPanel");
+const pageBindingsList = document.getElementById("pageBindingsList");
+const pageBindingsCount = document.getElementById("pageBindingsCount");
 const bindPanel = document.getElementById("bindPanel");
 const bindingsPanel = document.getElementById("bindingsPanel");
 const bindingsList = document.getElementById("bindingsList");
 const bindingsStatus = document.getElementById("bindingsStatus");
 const toggleBtn = document.getElementById("toggleInteractions");
+const toggleText = document.getElementById("toggleText");
 
 let activeTab = "local";
 let selectedInteraction = null;
-let selectedImage = null; // { src, width, height }
+let pageImages = [];
+let selectedImage = null; // { src, width, height, index, assetId, hasBinding, interactionName }
 let localItems = [];
 let globalItems = [];
 let globalLoaded = false;
+let currentPageBindings = [];
 
 // ---- Stop / Resume toggle ----
 let interactionsEnabled = true;
@@ -27,13 +33,13 @@ chrome.storage.local.get({ interactionsEnabled: true }, (res) => {
 
 function syncToggleBtn() {
   if (interactionsEnabled) {
-    toggleBtn.textContent = "▶ On";
+    if (toggleText) toggleText.textContent = "Active";
     toggleBtn.classList.remove("paused");
-    toggleBtn.title = "Interactions are active — click to pause all";
+    toggleBtn.title = "Interactions active — click to pause";
   } else {
-    toggleBtn.textContent = "⏸ Off";
+    if (toggleText) toggleText.textContent = "Paused";
     toggleBtn.classList.add("paused");
-    toggleBtn.title = "Interactions are paused — click to resume all";
+    toggleBtn.title = "Interactions paused — click to resume";
   }
 }
 
@@ -43,45 +49,169 @@ toggleBtn.addEventListener("click", () => {
   syncToggleBtn();
 });
 
-// 1. Scan current tab for images
+// 1. Scan current tab for images & active page bindings
 function scanPageImages() {
-  imagePickerEl.innerHTML = `<div class="empty">Scanning page for images…</div>`;
+  pageBindingsList.innerHTML = `<div class="empty-state"><div class="icon">✦</div>Scanning page for active interactions…</div>`;
+  if (imageSelect) imageSelect.innerHTML = `<option value="">Scanning page images…</option>`;
+
   chrome.tabs.query({ active: true, currentWindow: true }, (tabsList) => {
     if (!tabsList[0] || !tabsList[0].id) {
-      imagePickerEl.innerHTML = `<div class="empty">Cannot scan this page</div>`;
+      pageBindingsList.innerHTML = `<div class="empty-state">Cannot access this page</div>`;
+      if (imageSelect) imageSelect.innerHTML = `<option value="">Cannot scan page</option>`;
+      updatePageBindingsCount([]);
       return;
     }
-    chrome.tabs.sendMessage(tabsList[0].id, { type: "GET_PAGE_IMAGES" }, (res) => {
-      if (chrome.runtime.lastError || !res || !res.images || !res.images.length) {
-        imagePickerEl.innerHTML = `<div class="empty">No suitable images found on this page</div>`;
+    chrome.tabs.sendMessage(tabsList[0].id, { type: "GET_PAGE_DATA" }, (res) => {
+      if (chrome.runtime.lastError || !res) {
+        pageBindingsList.innerHTML = `<div class="empty-state">No interactions active on this page.</div>`;
+        if (imageSelect) imageSelect.innerHTML = `<option value="">No suitable images found</option>`;
+        updatePageBindingsCount([]);
         return;
       }
-      renderImagePicker(res.images);
+
+      pageImages = res.images || [];
+      const pageBindings = res.pageBindings || [];
+      currentPageBindings = pageBindings;
+
+      updatePageBindingsCount(pageBindings);
+      renderPageBindingsList(pageBindings);
+      populateImageSelect(pageImages);
     });
   });
 }
 
-function renderImagePicker(images) {
-  imagePickerEl.innerHTML = "";
-  images.forEach((img, idx) => {
-    const thumb = document.createElement("img");
-    thumb.className = "img-thumb" + (idx === 0 ? " selected" : "");
-    thumb.src = img.src;
-    thumb.title = `${img.width}x${img.height}px`;
-    thumb.onclick = () => {
-      document.querySelectorAll(".img-thumb").forEach((t) => t.classList.remove("selected"));
-      thumb.classList.add("selected");
-      selectedImage = img;
-    };
-    imagePickerEl.appendChild(thumb);
+function updatePageBindingsCount(pageBindings) {
+  const count = pageBindings ? pageBindings.length : 0;
+  if (pageBindingsCount) {
+    pageBindingsCount.textContent = String(count);
+    if (count > 0) {
+      pageBindingsCount.classList.add("has-count");
+    } else {
+      pageBindingsCount.classList.remove("has-count");
+    }
+  }
+}
+
+function renderPageBindingsList(bindings) {
+  pageBindingsList.innerHTML = "";
+  if (!bindings || !bindings.length) {
+    pageBindingsList.innerHTML = `
+      <div class="empty-state">
+        <div class="icon">✦</div>
+        No active interactions on this page.<br><br>
+        <button class="primary-btn" style="width: auto; margin: 0 auto; padding: 7px 14px;" id="jumpToBindBtn">+ Bind an Image</button>
+      </div>
+    `;
+    const jumpBtn = document.getElementById("jumpToBindBtn");
+    if (jumpBtn) {
+      jumpBtn.onclick = () => {
+        const bindTab = document.querySelector('[data-mode="bind"]');
+        if (bindTab) bindTab.click();
+      };
+    }
+    return;
+  }
+
+  bindings.forEach((b, idx) => {
+    const card = document.createElement("div");
+    card.className = "binding-card";
+
+    const left = document.createElement("div");
+    left.className = "card-left";
+
+    const icon = document.createElement("div");
+    icon.className = "card-icon";
+    icon.textContent = "★";
+    left.appendChild(icon);
+
+    const info = document.createElement("div");
+    info.className = "card-info";
+
+    const title = document.createElement("div");
+    title.className = "card-title";
+    title.textContent = b.interactionName;
+    info.appendChild(title);
+
+    const sub = document.createElement("div");
+    sub.className = "card-sub";
+    const variationText = b.bindingsCount > 1 ? ` • ${b.bindingsCount} variations` : "";
+    sub.textContent = `Image #${(b.index ?? idx) + 1}${variationText}`;
+    info.appendChild(sub);
+
+    left.appendChild(info);
+    card.appendChild(left);
+
+    const action = document.createElement("div");
+    action.className = "card-action-btn";
+    action.textContent = "Jump ↗";
+    card.appendChild(action);
+
+    card.addEventListener("click", () => {
+      document.querySelectorAll(".binding-card").forEach((c) => c.classList.remove("scrolled-active"));
+      card.classList.add("scrolled-active");
+      action.textContent = "✓ In View";
+
+      chrome.tabs.query({ active: true, currentWindow: true }, (tabsList) => {
+        if (tabsList[0] && tabsList[0].id) {
+          chrome.tabs.sendMessage(
+            tabsList[0].id,
+            { type: "SCROLL_TO_IMAGE", index: b.index, src: b.src, assetId: b.assetId },
+            () => {
+              setTimeout(() => {
+                action.textContent = "Jump ↗";
+              }, 2000);
+            }
+          );
+        }
+      });
+    });
+
+    pageBindingsList.appendChild(card);
   });
+}
+
+function populateImageSelect(images) {
+  if (!imageSelect) return;
+  imageSelect.innerHTML = "";
+  if (!images || !images.length) {
+    imageSelect.innerHTML = `<option value="">No candidate images on page</option>`;
+    selectedImage = null;
+    return;
+  }
+
+  images.forEach((img, idx) => {
+    const opt = document.createElement("option");
+    opt.value = String(idx);
+    const label = `Image #${idx + 1} (${img.width}×${img.height}px)` + (img.hasBinding ? ` — ★ ${img.interactionName || "Bound"}` : "");
+    opt.textContent = label;
+    imageSelect.appendChild(opt);
+  });
+
   selectedImage = images[0];
+
+  imageSelect.onchange = () => {
+    const chosenIdx = parseInt(imageSelect.value, 10);
+    if (!isNaN(chosenIdx) && images[chosenIdx]) {
+      selectedImage = images[chosenIdx];
+      // Highlight & center selected image on page
+      chrome.tabs.query({ active: true, currentWindow: true }, (tabsList) => {
+        if (tabsList[0] && tabsList[0].id) {
+          chrome.tabs.sendMessage(tabsList[0].id, {
+            type: "SCROLL_TO_IMAGE",
+            index: selectedImage.index,
+            src: selectedImage.src,
+            assetId: selectedImage.assetId,
+          });
+        }
+      });
+    }
+  };
 }
 
 function renderSelected() {
   if (selectedInteraction) {
     selectedInteractionEl.style.display = "block";
-    selectedInteractionEl.innerHTML = `<span style="color:var(--muted);font-size:10px;text-transform:uppercase;letter-spacing:0.05em;">Ready to bind:</span> <b style="color:var(--accent);font-size:11.5px;">★ ${selectedInteraction.name}</b>`;
+    selectedInteractionEl.innerHTML = `<span style="color:var(--muted);font-size:9.5px;text-transform:uppercase;letter-spacing:0.04em;">Selected:</span> <b style="color:var(--accent);font-size:11px;">★ ${selectedInteraction.name}</b>`;
   } else {
     selectedInteractionEl.style.display = "none";
     selectedInteractionEl.innerHTML = "";
@@ -92,8 +222,8 @@ function renderList() {
   if (activeTab === "new") {
     list.innerHTML = "";
     const item = document.createElement("div");
-    item.className = "empty";
-    item.innerHTML = `Opens the interaction editor in a new tab.<br>Write HTML/CSS/JS, preview it live, then come back here to bind it.`;
+    item.className = "empty-state";
+    item.innerHTML = `Opens code editor in a new tab.<br>Build custom HTML/CSS/JS, test live, then bind it here.`;
     list.appendChild(item);
     return;
   }
@@ -101,35 +231,32 @@ function renderList() {
   const items = activeTab === "local" ? localItems : globalItems;
   list.innerHTML = "";
   if (activeTab === "global" && !globalLoaded) {
-    list.innerHTML = `<div class="empty">Loading global gallery…</div>`;
+    list.innerHTML = `<div class="empty-state">Loading global gallery…</div>`;
     return;
   }
   if (!items.length) {
-    list.innerHTML = `<div class="empty">${
-      activeTab === "local" ? "No saved interactions yet." : "Nothing published yet."
+    list.innerHTML = `<div class="empty-state">${
+      activeTab === "local" ? "No saved templates yet." : "Nothing published yet."
     }</div>`;
     return;
   }
   items.forEach((it) => {
     const el = document.createElement("div");
-    el.className = "item" + (selectedInteraction && selectedInteraction._key === it._key ? " selected" : "");
+    el.className = "interaction-item" + (selectedInteraction && selectedInteraction._key === it._key ? " selected" : "");
 
     const name = document.createElement("span");
-    name.className = "item-name";
     name.textContent = it.name;
     el.appendChild(name);
 
-    // Edit button for user's custom interactions (those with a local id)
     if (activeTab === "local" && it.id && !it._isBuiltIn) {
-      const editBtn = document.createElement("button");
-      editBtn.className = "item-edit";
-      editBtn.textContent = "✏ Edit";
-      editBtn.title = "Open in editor";
-      editBtn.addEventListener("click", (e) => {
+      const editLink = document.createElement("span");
+      editLink.className = "edit-link";
+      editLink.textContent = "Edit ↗";
+      editLink.addEventListener("click", (e) => {
         e.stopPropagation();
         chrome.tabs.create({ url: chrome.runtime.getURL(`editor.html?localId=${it.id}`) });
       });
-      el.appendChild(editBtn);
+      el.appendChild(editLink);
     }
 
     el.addEventListener("click", () => {
@@ -143,7 +270,6 @@ function renderList() {
 
 async function loadLocal() {
   const { myInteractions = [] } = await chrome.storage.local.get("myInteractions");
-  // Include built-in templates in local library
   const builtIns = typeof GLOBAL_TEMPLATES !== "undefined" ? GLOBAL_TEMPLATES : [];
   const builtInItems = builtIns.map((i) => ({ ...i, _key: "local:" + (i.id || i.name), _isBuiltIn: true }));
   const userItems = myInteractions.map((i) => ({ ...i, _key: "local:" + (i.id || i.name), _isBuiltIn: false }));
@@ -164,14 +290,14 @@ function loadGlobal() {
   });
 }
 
-tabs.forEach((tab) => {
+pillTabs.forEach((tab) => {
   tab.addEventListener("click", () => {
-    tabs.forEach((t) => t.classList.remove("active"));
+    pillTabs.forEach((t) => t.classList.remove("active"));
     tab.classList.add("active");
     activeTab = tab.dataset.tab;
     if (activeTab === "new") {
       chrome.tabs.create({ url: chrome.runtime.getURL("editor.html") });
-      tabs.forEach((t) => t.classList.remove("active"));
+      pillTabs.forEach((t) => t.classList.remove("active"));
       document.querySelector('[data-tab="local"]').classList.add("active");
       activeTab = "local";
     }
@@ -180,14 +306,16 @@ tabs.forEach((tab) => {
   });
 });
 
-modeTabs.forEach((tab) => {
+navTabs.forEach((tab) => {
   tab.addEventListener("click", () => {
-    modeTabs.forEach((t) => t.classList.remove("active"));
+    navTabs.forEach((t) => t.classList.remove("active"));
     tab.classList.add("active");
     const mode = tab.dataset.mode;
-    bindPanel.hidden = mode !== "bind";
-    bindingsPanel.hidden = mode !== "bindings";
+    if (pageBindingsPanel) pageBindingsPanel.hidden = mode !== "pageBindings";
+    if (bindPanel) bindPanel.hidden = mode !== "bind";
+    if (bindingsPanel) bindingsPanel.hidden = mode !== "bindings";
     if (mode === "bindings") loadBindings();
+    if (mode === "pageBindings") scanPageImages();
   });
 });
 
@@ -196,30 +324,30 @@ async function loadBindings() {
   const sorted = [...myBindings].sort((a, b) => (b.boundAt || "").localeCompare(a.boundAt || ""));
   bindingsList.innerHTML = "";
   if (!sorted.length) {
-    bindingsList.innerHTML = `<div class="empty">You haven't bound any images from this browser yet.</div>`;
+    bindingsList.innerHTML = `<div class="empty-state">No saved bindings found.</div>`;
     return;
   }
   sorted.forEach((b) => {
-    const row = document.createElement("div");
-    row.className = "binding-item";
+    const card = document.createElement("div");
+    card.className = "saved-binding-item";
 
-    const urlEl = document.createElement("div");
-    urlEl.className = "binding-url";
-    urlEl.textContent = b.url.length > 80 ? b.url.slice(0, 77) + "…" : b.url;
-    row.appendChild(urlEl);
+    const name = document.createElement("div");
+    name.className = "saved-binding-name";
+    name.textContent = `★ ${b.interactionName || "Untitled"}`;
+    card.appendChild(name);
 
-    const interactionEl = document.createElement("div");
-    interactionEl.className = "binding-interaction";
-    interactionEl.textContent = `★ ${b.interactionName || "Untitled"}`;
-    row.appendChild(interactionEl);
+    const url = document.createElement("div");
+    url.className = "saved-binding-url";
+    url.textContent = b.url.length > 70 ? b.url.slice(0, 67) + "…" : b.url;
+    card.appendChild(url);
 
     const removeBtn = document.createElement("button");
-    removeBtn.className = "danger";
-    removeBtn.textContent = "Remove Binding";
-    removeBtn.onclick = () => removeBinding(b.assetId, b.pushId, b.url, row, removeBtn);
-    row.appendChild(removeBtn);
+    removeBtn.className = "danger-btn";
+    removeBtn.textContent = "Remove";
+    removeBtn.onclick = () => removeBinding(b.assetId, b.pushId, b.url, card, removeBtn);
+    card.appendChild(removeBtn);
 
-    bindingsList.appendChild(row);
+    bindingsList.appendChild(card);
   });
 }
 
@@ -235,12 +363,13 @@ async function removeBinding(assetId, pushId, url, row, btn) {
       await chrome.storage.local.set({ myBindings: updated });
       row.remove();
       if (!bindingsList.children.length) {
-        bindingsList.innerHTML = `<div class="empty">You haven't bound any images from this browser yet.</div>`;
+        bindingsList.innerHTML = `<div class="empty-state">No saved bindings found.</div>`;
       }
       bindingsStatus.textContent = "Binding removed.";
+      setTimeout(scanPageImages, 400);
     } else {
       btn.disabled = false;
-      btn.textContent = "Remove Binding";
+      btn.textContent = "Remove";
       bindingsStatus.textContent = "Failed to remove binding.";
     }
   });
@@ -248,32 +377,27 @@ async function removeBinding(assetId, pushId, url, row, btn) {
 
 saveBtn.addEventListener("click", async () => {
   if (!selectedImage || !selectedImage.src) {
-    const firstThumb = imagePickerEl.querySelector(".img-thumb");
-    if (firstThumb) {
-      firstThumb.click();
-    } else {
-      statusEl.textContent = "Select an image from the picker above first.";
-      return;
-    }
+    statusEl.textContent = "Select an image on the page first.";
+    return;
   }
   if (!selectedInteraction) {
-    statusEl.textContent = "Pick an interaction first.";
+    statusEl.textContent = "Choose an interaction first.";
     return;
   }
 
   saveBtn.disabled = true;
   saveBtn.textContent = "Binding…";
-  statusEl.textContent = "⚡ Computing 128-bit visual fingerprint…";
+  statusEl.textContent = "⚡ Computing visual fingerprint…";
 
   chrome.runtime.sendMessage({ type: "IDENTIFY_ASSET", url: selectedImage.src }, (idRes) => {
     if (!idRes || !idRes.ok || !idRes.assetId) {
       saveBtn.disabled = false;
-      saveBtn.textContent = "Bind this image";
+      saveBtn.textContent = "Bind to Selected Image";
       statusEl.textContent = "Could not identify image fingerprint.";
       return;
     }
     const assetId = idRes.assetId;
-    statusEl.textContent = "⚡ Syncing universal binding to Realtime Database…";
+    statusEl.textContent = "⚡ Syncing binding to database…";
 
     const interaction = {
       name: selectedInteraction.name,
@@ -286,13 +410,14 @@ saveBtn.addEventListener("click", async () => {
       { type: "SAVE_ASSET_BINDING", assetId, url: selectedImage.src, interaction },
       async (saveRes) => {
         saveBtn.disabled = false;
-        saveBtn.textContent = "Bind this image";
+        saveBtn.textContent = "Bind to Selected Image";
         if (saveRes && saveRes.ok) {
           statusEl.textContent = saveRes.isUpdate
-            ? `✓ Updated! Your interaction for this image is now live.`
-            : `✓ Bound! Everyone across all profiles can now interact with this image.`;
+            ? `✓ Updated! Live across all tabs and browsers.`
+            : `✓ Bound! Live across all tabs and browsers.`;
+          setTimeout(scanPageImages, 600);
         } else if (saveRes && saveRes.alreadyApplied) {
-          statusEl.textContent = `⚠️ "${selectedInteraction.name}" has already been applied to this image by another user.`;
+          statusEl.textContent = `⚠️ "${selectedInteraction.name}" has already been applied.`;
         } else {
           statusEl.textContent = "Failed to save binding.";
         }

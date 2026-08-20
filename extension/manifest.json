@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "Locked Image",
+  "name": "Open Sesame",
   "version": "0.3.0",
   "description": "A shared interactive layer over images anywhere on the web \u2014 recognized by what they look like, not by URL.",
   "icons": {

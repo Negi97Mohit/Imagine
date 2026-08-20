@@ -1,8 +1,8 @@
 <div align="center">
 
-<img src="./icon128.png" alt="Locked Image" width="96" height="96">
+<img src="./icon128.png" alt="Open Sesame" width="96" height="96">
 
-# Locked Image
+# Open Sesame
 
 **Universal Interactive Asset Layer — Turn any image across the web into an interactive canvas.**
 
@@ -16,13 +16,13 @@
 
 ---
 
-## What is Locked Image?
+## What is Open Sesame?
 
-Ever looked at a photograph, product image, poster, or artwork on the web and wished it wasn't just a flat, lifeless image? Welcome to **Locked Image**! Whether you want to add a liquid water ripple effect, scratch off a mystery layer, shatter glass into physics shards, or convert a portrait into a matrix of ASCII typography, Locked Image turns any image on any webpage into an interactive playground.
+Ever looked at a photograph, product image, poster, or artwork on the web and wished it wasn't just a flat, lifeless image? Welcome to **Open Sesame**! Whether you want to add a liquid water ripple effect, scratch off a mystery layer, shatter glass into physics shards, or convert a portrait into a matrix of ASCII typography, Open Sesame turns any image on any webpage into an interactive playground.
 
-Powered by a **128-bit composite perceptual fingerprinting engine** (`dHash` + $4 \times 4$ color grid + intrinsic aspect ratio), Locked Image recognizes the exact visual asset regardless of website changes, CDN image resizing, or URL query parameters. When an interaction is bound to an image, anyone browsing the web with the extension will see that interaction live on that image in real-time.
+Powered by a **128-bit composite perceptual fingerprinting engine** (`dHash` + $4 \times 4$ color grid + intrinsic aspect ratio), Open Sesame recognizes the exact visual asset regardless of website changes, CDN image resizing, or URL query parameters. When an interaction is bound to an image, anyone browsing the web with the extension will see that interaction live on that image in real-time.
 
-Wrapped in a sleek, lightweight interface with persistent floating pins, Locked Image stays out of your way until you hover or click to interact.
+Wrapped in a sleek, lightweight interface with persistent floating pins, Open Sesame stays out of your way until you hover or click to interact.
 
 ✨ Explore Curated Interactions
 Choose from our curated built-in interactive templates to instantly transform what you are looking at:
@@ -40,7 +40,7 @@ Choose from our curated built-in interactive templates to instantly transform wh
 - **Padlock Unlock**: Interactive security dial that unlocks when the puzzle is solved.
 
 🎯 Interact Your Way
-Locked Image adapts to your browsing flow with flexible interaction modes:
+Open Sesame adapts to your browsing flow with flexible interaction modes:
 
 - **Hover & Play**: Hover over any candidate image with an active binding to instantly trigger its interactive canvas overlay.
 - **Pin Mode (+)**: Click the persistent orange `+` pin in the corner of any image to open the multi-creator switcher, toggle bindings, or preview different author variations.
@@ -89,9 +89,9 @@ Crafted with care by Mohit Singh Negi.
 
 ### From the Chrome Web Store _(recommended)_
 
-1. Visit the [Locked Image page on the Chrome Web Store](#) _(link coming soon)_
+1. Visit the [Open Sesame page on the Chrome Web Store](#) _(link coming soon)_
 2. Click **Add to Chrome**
-3. Pin **Locked Image** to your browser toolbar for quick access
+3. Pin **Open Sesame** to your browser toolbar for quick access
 
 ### From Source
 
@@ -226,13 +226,13 @@ function run(canvas, img, config, root) {
 }
 ```
 
-Custom interactions are saved to your local library and can be published to the Global Gallery for anyone using Locked Image to discover and bind.
+Custom interactions are saved to your local library and can be published to the Global Gallery for anyone using Open Sesame to discover and bind.
 
 ---
 
 ## Security & Sandboxing Architecture
 
-Locked Image enforces enterprise-grade security boundaries:
+Open Sesame enforces enterprise-grade security boundaries:
 
 - **Isolated Null-Origin Iframe**: Scripts run inside an `iframe` with `sandbox="allow-scripts"` and a unique `null` origin.
 - **Zero Host Access**: User scripts cannot access the host website's DOM, cookies, session storage, or credentials.
@@ -244,7 +244,7 @@ Locked Image enforces enterprise-grade security boundaries:
 
 ## Privacy
 
-Locked Image is designed with a privacy-first foundation:
+Open Sesame is designed with a privacy-first foundation:
 
 - **No Personal Data Collection**: No browsing history, account credentials, or identifying information is collected.
 - **Anonymous User IDs**: Multi-user bindings use anonymous, cryptographically random UUIDs stored in local extension storage.
@@ -271,7 +271,7 @@ Locked Image is designed with a privacy-first foundation:
 Ensure the image is at least $140 \times 140\text{px}$ and visible in the viewport. Small thumbnails, icons, and UI buttons are filtered out automatically.
 
 **An interaction appears blank on a specific website**
-Certain CDNs block canvas pixel extraction. Locked Image automatically requests a clean background Data URL. If an author's script has a syntax error, a small `⚠️ Interaction Error` badge will appear on the bottom left.
+Certain CDNs block canvas pixel extraction. Open Sesame automatically requests a clean background Data URL. If an author's script has a syntax error, a small `⚠️ Interaction Error` badge will appear on the bottom left.
 
 **Interactions are paused**
 Check the popup menu header. If the toggle button shows `⏸ Off`, click it to switch it back to `▶ On`.
