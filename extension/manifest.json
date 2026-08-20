@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Open Sesame",
-  "version": "0.3.0",
+  "version": "1.0",
   "description": "A shared interactive layer over images anywhere on the web \u2014 recognized by what they look like, not by URL.",
   "icons": {
     "16": "icon16.png",
