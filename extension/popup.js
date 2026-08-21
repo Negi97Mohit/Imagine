@@ -270,10 +270,7 @@ function renderList() {
 
 async function loadLocal() {
   const { myInteractions = [] } = await chrome.storage.local.get("myInteractions");
-  const builtIns = typeof GLOBAL_TEMPLATES !== "undefined" ? GLOBAL_TEMPLATES : [];
-  const builtInItems = builtIns.map((i) => ({ ...i, _key: "local:" + (i.id || i.name), _isBuiltIn: true }));
-  const userItems = myInteractions.map((i) => ({ ...i, _key: "local:" + (i.id || i.name), _isBuiltIn: false }));
-  localItems = [...builtInItems, ...userItems];
+  localItems = myInteractions.map((i) => ({ ...i, _key: "local:" + (i.id || i.name), _isBuiltIn: false }));
   if (!selectedInteraction && localItems.length) {
     selectedInteraction = localItems[0];
   }

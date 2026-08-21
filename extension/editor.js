@@ -61,11 +61,12 @@ async function init() {
     }
   }
 
-  // Fresh interaction — pre-fill with the built-in starter template.
+  // Fresh interaction — pre-fill with starter boilerplate.
+  const starter = typeof STARTER_TEMPLATE !== "undefined" ? STARTER_TEMPLATE : (typeof WATER_REVEAL_TEMPLATE !== "undefined" ? WATER_REVEAL_TEMPLATE : { html: "", css: "", js: "" });
   nameInput.value = "";
-  htmlCode.value = WATER_REVEAL_TEMPLATE.html;
-  cssCode.value = WATER_REVEAL_TEMPLATE.css;
-  jsCode.value = WATER_REVEAL_TEMPLATE.js;
+  htmlCode.value = starter.html || "";
+  cssCode.value = starter.css || "";
+  jsCode.value = starter.js || "";
   savedSnapshot = snapshot();
 }
 

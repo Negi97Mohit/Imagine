@@ -371,42 +371,19 @@ async function listGlobalInteractions() {
       const data = await res.json();
       if (data && typeof data === "object") {
         const fetched = Object.keys(data).map((k) => ({ ...data[k], id: k }));
-        const seenNames = new Set(fetched.map((it) => it.name));
-        const merged = [...fetched];
-        if (typeof GLOBAL_TEMPLATES !== "undefined") {
-          GLOBAL_TEMPLATES.forEach((t) => {
-            if (!seenNames.has(t.name)) merged.push(t);
-          });
-        }
-        return { ok: true, items: merged };
+        return { ok: true, items: fetched };
       }
     }
-  } catch (e) {}
+  } catch (e) {
+    console.warn("[locked-image] Failed to fetch global interactions from RTDB:", e);
+  }
 
-  return { ok: true, items: typeof GLOBAL_TEMPLATES !== "undefined" ? GLOBAL_TEMPLATES : [] };
-}
-
-async function seedGlobalTemplates() {
-  if (typeof GLOBAL_TEMPLATES === "undefined" || !GLOBAL_TEMPLATES.length) return;
-  try {
-    const res = await fetch(rtdbInteractionUrl(), { cache: "no-store" });
-    if (!res.ok) return;
-    const data = (await res.json()) || {};
-    const existingNames = new Set(Object.values(data).map((d) => d.name));
-
-    for (const t of GLOBAL_TEMPLATES) {
-      if (!existingNames.has(t.name)) {
-        await publishInteraction(t);
-      }
-    }
-  } catch (e) {}
+  return { ok: true, items: [] };
 }
 
 chrome.runtime.onInstalled.addListener(() => {
-  seedGlobalTemplates();
   getAnonUserId();
 });
-seedGlobalTemplates();
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === "IDENTIFY_ASSET") {

@@ -233,10 +233,10 @@ const AssetOverlay = (() => {
 
       menuEl = makeEl(
         "div",
-        "position:fixed;width:260px;max-height:340px;overflow-y:auto;" +
-          "background:#ffffff;color:#0a0a0a;border:1px solid #1a1a1a;box-shadow:0 6px 18px rgba(0,0,0,0.25);" +
+        "position:fixed;width:270px;max-height:min(75vh, 440px);overflow-y:auto;" +
+          "background:#ffffff;color:#0a0a0a;border:1px solid #1a1a1a;box-shadow:0 6px 20px rgba(0,0,0,0.3);" +
           "padding:10px;font-family:Inter,sans-serif;font-size:11px;z-index:2147483647;pointer-events:auto;" +
-          "border-radius:4px;",
+          "border-radius:6px;",
         "locked-image-menu"
       );
 
@@ -447,17 +447,30 @@ const AssetOverlay = (() => {
 
       const listDiv = makeEl("div", "display:flex;flex-direction:column;gap:3px;");
 
-      // 1. Presets / Templates
-      const templates = typeof GLOBAL_TEMPLATES !== "undefined" ? GLOBAL_TEMPLATES : [WATER_REVEAL_TEMPLATE];
-      templates.forEach((t) => {
-        const item = makeEl("div", "padding:5px 8px;background:#f4f1ec;cursor:pointer;border:1px solid #ddd;font-weight:600;border-radius:2px;font-size:10.5px;");
-        item.textContent = `★ ${t.name}`;
-        item.onclick = (e) => {
-          e.stopPropagation();
-          handleSelectInteraction(t);
-        };
-        listDiv.appendChild(item);
-      });
+      // 1. Dynamic Interactions from Realtime Database
+      let templates = [];
+      try {
+        const res = await new Promise((resolve) => {
+          chrome.runtime.sendMessage({ type: "LIST_GLOBAL_INTERACTIONS" }, (r) => resolve(r));
+        });
+        if (res && res.ok && Array.isArray(res.items)) {
+          templates = res.items;
+        }
+      } catch (e) {}
+
+      if (templates.length) {
+        templates.forEach((t) => {
+          const item = makeEl("div", "padding:6px 9px;background:#f4f1ec;cursor:pointer;border:1px solid #e2ded8;font-weight:600;border-radius:4px;font-size:11px;transition:background 0.15s ease;display:flex;align-items:center;gap:5px;");
+          item.textContent = `★ ${t.name || "Untitled"}`;
+          item.onmouseenter = () => { item.style.background = "#eadecf"; item.style.borderColor = "#ca8a04"; };
+          item.onmouseleave = () => { item.style.background = "#f4f1ec"; item.style.borderColor = "#e2ded8"; };
+          item.onclick = (e) => {
+            e.stopPropagation();
+            handleSelectInteraction(t);
+          };
+          listDiv.appendChild(item);
+        });
+      }
 
       // 2. Local interactions
       const { myInteractions = [] } = await chrome.storage.local.get("myInteractions");
