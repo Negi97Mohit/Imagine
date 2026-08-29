@@ -47,7 +47,10 @@
   },
   "web_accessible_resources": [
     {
-      "resources": ["sandbox.html"],
+      "resources": [
+        "sandbox.html",
+        "modules/redesign-presets.json"
+      ],
       "matches": ["<all_urls>"]
     }
   ],
