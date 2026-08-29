@@ -64,10 +64,15 @@
   }
 
   function identifyAsset(img) {
+    const src = ImageDetector.resolvedSrc(img);
+    const platformId = typeof extractPlatformAssetId === "function" ? extractPlatformAssetId(src) : null;
+    if (platformId) {
+      return Promise.resolve({ ok: true, assetId: platformId });
+    }
     const directHash = tryExtractDirectHash(img);
     return new Promise((resolve) => {
       chrome.runtime.sendMessage(
-        { type: "IDENTIFY_ASSET", url: ImageDetector.resolvedSrc(img), directHash },
+        { type: "IDENTIFY_ASSET", url: src, directHash },
         (res) => resolve(res || { ok: false })
       );
     });
