@@ -1,10 +1,29 @@
 [
   {
+    "id": "background-repulsion-interactive-grid",
+    "name": "Interactive Repulsion Grid & Stamp (Reveal)",
+    "category": "background",
+    "theme": "Vogue / High-Fashion Editorial",
+    "description": "Interactive canvas dot matrix that smoothly grows and repels around the cursor, revealing underlying artwork and featuring a rotating badge stamp.",
+    "engineId": "repulsion-grid",
+    "styles": {
+      "backgroundColor": "transparent",
+      "color": "",
+      "border": "",
+      "borderRadius": "",
+      "boxShadow": ""
+    },
+    "cssText": "",
+    "html": "",
+    "js": ""
+  },
+  {
     "id": "background-chromatic-laser-webgl",
-    "name": "Chromatic Wave Laser (WebGL)",
+    "name": "Interactive Chromatic Waves (WebGL)",
     "category": "background",
     "theme": "Cyberpunk Neon Matrix",
-    "description": "Adaptive live GPU WebGL shader featuring luminous chromatic aberration laser waves.",
+    "description": "Adaptive GPU WebGL shader featuring live chromatic aberration laser ribbons that bend with cursor movement.",
+    "engineId": "chromatic-laser",
     "styles": {
       "backgroundColor": "transparent",
       "color": "#ffffff",
@@ -14,194 +33,187 @@
     },
     "cssText": "background-color: transparent !important; color: #ffffff !important;",
     "html": "",
-    "js": "(function(targetEl) {\n      const el = targetEl || document.body;\n      const isFullPage = (el === document.body || el === document.documentElement || el.tagName.toLowerCase() === \"main\" || el.id === \"rcnt\");\n\n      let existing = document.getElementById(\"imagine-webgl-canvas-global\") || el.querySelector(\":scope > .imagine-webgl-canvas\");\n      if (existing) existing.remove();\n\n      const canvas = document.createElement(\"canvas\");\n      canvas.className = \"imagine-webgl-canvas\";\n\n      if (isFullPage) {\n        canvas.id = \"imagine-webgl-canvas-global\";\n        canvas.style.cssText = \"position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:-1;pointer-events:none;display:block;\";\n        document.body.prepend(canvas);\n        document.documentElement.style.setProperty(\"background-color\", \"transparent\", \"important\");\n        document.body.style.setProperty(\"background-color\", \"transparent\", \"important\");\n      } else {\n        const compPos = window.getComputedStyle(el).position;\n        if (compPos === \"static\") el.style.position = \"relative\";\n        canvas.style.cssText = \"position:absolute;top:0;left:0;width:100%;height:100%;z-index:0;pointer-events:none;display:block;border-radius:inherit;\";\n        el.prepend(canvas);\n      }\n\n      const gl = canvas.getContext(\"webgl\", { alpha: false, antialias: true }) || canvas.getContext(\"experimental-webgl\");\n      if (!gl) return;\n\n      const vsSrc = \"attribute vec2 position; void main() { gl_Position = vec4(position, 0.0, 1.0); }\";\n      const fsSrc = \"precision highp float; uniform vec2 resolution; uniform float time; uniform float xScale; uniform float yScale; uniform float distortion; void main() { vec2 p = (gl_FragCoord.xy * 2.0 - resolution) / min(resolution.x, resolution.y); float d = length(p) * distortion; float rx = p.x * (1.0 + d); float gx = p.x; float bx = p.x * (1.0 - d); float r = 0.08 / (abs(p.y + sin((rx + time * 1.5) * xScale) * yScale) + 0.001); float g = 0.08 / (abs(p.y + sin((gx + time * 1.5) * xScale) * yScale) + 0.001); float b = 0.08 / (abs(p.y + sin((bx + time * 1.5) * xScale) * yScale) + 0.001); vec3 bg = vec3(0.04, 0.05, 0.09); vec3 col = bg + vec3(r * 1.2, g * 0.8, b * 1.4); gl_FragColor = vec4(col, 1.0); }\";\n\n      function compile(type, src) {\n        const s = gl.createShader(type);\n        gl.shaderSource(s, src);\n        gl.compileShader(s);\n        return gl.getShaderParameter(s, gl.COMPILE_STATUS) ? s : null;\n      }\n\n      const vs = compile(gl.VERTEX_SHADER, vsSrc);\n      const fs = compile(gl.FRAGMENT_SHADER, fsSrc);\n      if (!vs || !fs) return;\n\n      const prog = gl.createProgram();\n      gl.attachShader(prog, vs);\n      gl.attachShader(prog, fs);\n      gl.linkProgram(prog);\n      if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) return;\n      gl.useProgram(prog);\n\n      const buf = gl.createBuffer();\n      gl.bindBuffer(gl.ARRAY_BUFFER, buf);\n      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, -1,1, 1,-1, 1,1]), gl.STATIC_DRAW);\n\n      const pos = gl.getAttribLocation(prog, \"position\");\n      gl.enableVertexAttribArray(pos);\n      gl.vertexAttribPointer(pos, 2, gl.FLOAT, false, 0, 0);\n\n      const uRes = gl.getUniformLocation(prog, \"resolution\");\n      const uTime = gl.getUniformLocation(prog, \"time\");\n      const uXScale = gl.getUniformLocation(prog, \"xScale\");\n      const uYScale = gl.getUniformLocation(prog, \"yScale\");\n      const uDistortion = gl.getUniformLocation(prog, \"distortion\");\n\n      gl.uniform1f(uXScale, 1.2);\n      gl.uniform1f(uYScale, 0.45);\n      gl.uniform1f(uDistortion, 0.08);\n\n      function resize() {\n        const dpr = Math.min(window.devicePixelRatio || 1, 3);\n        const rect = isFullPage ? { width: window.innerWidth, height: window.innerHeight } : el.getBoundingClientRect();\n        const w = Math.max(1, Math.round(rect.width * dpr));\n        const h = Math.max(1, Math.round(rect.height * dpr));\n        if (canvas.width !== w || canvas.height !== h) {\n          canvas.width = w;\n          canvas.height = h;\n        }\n        gl.viewport(0, 0, canvas.width, canvas.height);\n        gl.uniform2f(uRes, canvas.width, canvas.height);\n      }\n      resize();\n\n      const ro = (typeof ResizeObserver !== \"undefined\" && !isFullPage) ? new ResizeObserver(resize) : null;\n      if (ro) ro.observe(el);\n      window.addEventListener(\"resize\", resize);\n\n      let start = performance.now();\n      function render(now) {\n        if (!canvas.isConnected) {\n          if (ro) ro.disconnect();\n          window.removeEventListener(\"resize\", resize);\n          return;\n        }\n        gl.uniform1f(uTime, (now - start) * 0.001);\n        gl.drawArrays(gl.TRIANGLES, 0, 6);\n        requestAnimationFrame(render);\n      }\n      requestAnimationFrame(render);\n    })(element);"
+    "js": ""
   },
   {
     "id": "background-anime-cyber-grid",
-    "name": "Cyber Manga Grid Backdrop",
+    "name": "Interactive Cyber Manga Particle Grid",
     "category": "background",
     "theme": "Anime / Cyber-Mecha",
-    "description": "Full-bleed adaptive dark manga grid backdrop with luminous cyan and magenta radial glow.",
+    "description": "Interactive neon cyan & magenta laser node mesh that springs, connects, and emits shockwave rings on cursor hover.",
+    "engineId": "cyber-grid",
     "styles": {
-      "backgroundColor": "#090d16",
+      "backgroundColor": "transparent",
       "color": "#e0f2fe",
       "border": "none",
       "borderRadius": "0px",
       "boxShadow": "none"
     },
-    "cssText": "background-color: #090d16 !important; background-image: radial-gradient(rgba(0, 240, 255, 0.4) 1.5px, transparent 1.5px), radial-gradient(ellipse at 80% 20%, rgba(255, 0, 127, 0.35) 0%, transparent 60%), radial-gradient(ellipse at 20% 80%, rgba(0, 240, 255, 0.25) 0%, transparent 50%) !important; background-size: 28px 28px, 100% 100%, 100% 100% !important; background-repeat: repeat, no-repeat, no-repeat !important; color: #e0f2fe !important;",
+    "cssText": "color: #e0f2fe !important;",
     "html": "",
     "js": ""
   },
   {
     "id": "background-vogue-editorial",
-    "name": "Vogue Minimalist Canvas",
+    "name": "Interactive Vogue Monochromatic Waves",
     "category": "background",
     "theme": "Vogue / High-Fashion Editorial",
-    "description": "Pure editorial canvas with a subtle monochromatic grain and 1px micro-grid.",
+    "description": "High-fashion minimalist canvas with interactive fluid wave ripples and dynamic halftone dots reacting to cursor speed.",
+    "engineId": "vogue-waves",
     "styles": {
-      "backgroundColor": "#f8f9fa",
+      "backgroundColor": "transparent",
       "color": "#000000",
       "border": "none",
       "borderRadius": "0px",
       "boxShadow": "none"
     },
-    "cssText": "background-color: #f8f9fa !important; background-image: linear-gradient(rgba(0, 0, 0, 0.06) 1px, transparent 1px), linear-gradient(90deg, rgba(0, 0, 0, 0.06) 1px, transparent 1px) !important; background-size: 32px 32px !important; background-repeat: repeat !important; font-family: 'Playfair Display', Georgia, serif !important; color: #000000 !important;",
+    "cssText": "font-family: 'Playfair Display', Georgia, serif !important; color: #000000 !important;",
     "html": "",
     "js": ""
   },
   {
     "id": "background-netflix-cinematic",
-    "name": "Dark Cinematic Vignette",
+    "name": "Interactive Dark Cinematic Spotlight & Smoke",
     "category": "background",
     "theme": "Netflix / Dark Cinematic",
-    "description": "Deep obsidian backdrop with a heavy crimson radial vignette framing the center.",
+    "description": "Deep obsidian backdrop with interactive crimson fluid smoke swirls and an ambient spotlight beam tracking the cursor.",
+    "engineId": "netflix-smoke",
     "styles": {
-      "backgroundColor": "#111114",
+      "backgroundColor": "transparent",
       "color": "#ffffff",
       "border": "none",
       "borderRadius": "0px",
       "boxShadow": "none"
     },
-    "cssText": "background-color: #111114 !important; background-image: radial-gradient(circle at 50% 20%, #5a0d0d 0%, #1a0505 50%, #111114 90%) !important; background-size: 100% 100% !important; background-repeat: no-repeat !important; color: #ffffff !important;",
+    "cssText": "color: #ffffff !important;",
     "html": "",
     "js": ""
   },
   {
     "id": "background-instagram-sunset",
-    "name": "Creator Pulse Sunset Mesh",
+    "name": "Interactive Sunset Fluid Aurora Mesh",
     "category": "background",
     "theme": "Instagram / Creator Pulse",
-    "description": "Fluid multi-stop sunset gradient mesh overlay for immersive creator profiles.",
+    "description": "Multi-point fluid chromatic sunset gradient mesh that gravitationally morphs and stretches toward cursor movement.",
+    "engineId": "instagram-sunset",
     "styles": {
-      "backgroundColor": "#0f0c20",
+      "backgroundColor": "transparent",
       "color": "#ffffff",
       "border": "none",
       "borderRadius": "0px",
       "boxShadow": "none"
     },
-    "cssText": "background-color: #0f0c20 !important; background-image: radial-gradient(circle at 90% 10%, rgba(255, 45, 120, 0.6), transparent 50%), radial-gradient(circle at 10% 90%, rgba(255, 140, 0, 0.5), transparent 50%), radial-gradient(circle at 50% 50%, #240b36, #0c0714) !important; background-size: 100% 100% !important; background-repeat: no-repeat !important; color: #ffffff !important;",
+    "cssText": "color: #ffffff !important;",
     "html": "",
     "js": ""
   },
   {
     "id": "background-youtube-studio",
-    "name": "Studio Slate Canvas",
+    "name": "Interactive Studio Slate Audio Matrix",
     "category": "background",
     "theme": "YouTube / Modern Studio",
-    "description": "Clean dark mode slate with a subtle top ambient crimson edge line.",
+    "description": "Interactive kinetic equalizer bars and sound-wave ripple grid reacting to cursor proximity.",
+    "engineId": "youtube-studio",
     "styles": {
-      "backgroundColor": "#0f0f12",
+      "backgroundColor": "transparent",
       "color": "#f1f1f1",
       "border": "none",
       "borderRadius": "0px",
       "boxShadow": "none"
     },
-    "cssText": "background-color: #0f0f12 !important; background-image: linear-gradient(180deg, rgba(255, 0, 50, 0.22) 0%, rgba(255, 0, 50, 0.04) 180px, transparent 300px) !important; background-size: 100% 100% !important; background-repeat: no-repeat !important; font-family: 'Roboto', sans-serif !important; color: #f1f1f1 !important;",
+    "cssText": "font-family: 'Roboto', sans-serif !important; color: #f1f1f1 !important;",
     "html": "",
     "js": ""
   },
   {
     "id": "background-apple-minimal",
-    "name": "Apple Frosted Aurora",
+    "name": "Interactive Apple Frosted Aurora Fluids",
     "category": "background",
     "theme": "Apple / Linear / Minimal Chic",
-    "description": "Ultra-smooth diffuse gradient background simulating frosted glass aurora.",
+    "description": "Ultra-smooth diffuse frosted glass fluid metaballs that dynamically gravitate toward and swirl around cursor movements.",
+    "engineId": "apple-aurora",
     "styles": {
-      "backgroundColor": "#f0f4fc",
+      "backgroundColor": "transparent",
       "color": "#1d1d1f",
       "border": "none",
       "borderRadius": "0px",
       "boxShadow": "none"
     },
-    "cssText": "background-color: #f0f4fc !important; background-image: radial-gradient(circle at 20% 30%, rgba(99, 140, 255, 0.35), transparent 50%), radial-gradient(circle at 80% 25%, rgba(255, 180, 210, 0.4), transparent 50%), radial-gradient(circle at 50% 85%, rgba(180, 240, 255, 0.35), transparent 60%) !important; background-size: 100% 100% !important; background-repeat: no-repeat !important; color: #1d1d1f !important;",
+    "cssText": "color: #1d1d1f !important;",
     "html": "",
     "js": ""
   },
   {
     "id": "background-y2k-retro",
-    "name": "Y2K Acid Grid",
+    "name": "Interactive Y2K Acid Grid Vortex",
     "category": "background",
     "theme": "Retro 90s / Y2K / Windows 95",
-    "description": "Tiled pastel lilac and acid green checker grid echoing retro web nostalgia.",
+    "description": "Pastel lilac and acid green checkerboard grid with real-time 3D vortex warping under cursor movements.",
+    "engineId": "y2k-vortex",
     "styles": {
-      "backgroundColor": "#e8daf0",
+      "backgroundColor": "transparent",
       "color": "#000000",
       "border": "none",
       "borderRadius": "0px",
       "boxShadow": "none"
     },
-    "cssText": "background-color: #e8daf0 !important; background-image: linear-gradient(45deg, #c4a0d6 25%, transparent 25%, transparent 75%, #c4a0d6 75%, #c4a0d6), linear-gradient(45deg, #c4a0d6 25%, transparent 25%, transparent 75%, #c4a0d6 75%, #c4a0d6) !important; background-size: 36px 36px !important; background-position: 0 0, 18px 18px !important; background-repeat: repeat !important; color: #000000 !important;",
+    "cssText": "color: #000000 !important;",
     "html": "",
     "js": ""
   },
   {
     "id": "background-neobrutalism",
-    "name": "Neo-Brutalist Polka Beige",
+    "name": "Interactive Neo-Brutalist Kinetic Polka Dots",
     "category": "background",
     "theme": "Neo-Brutalism",
-    "description": "Stark beige backdrop with a harsh black polka dot pattern for brutalist apps.",
+    "description": "Stark polka dot grid where dots physically repel and spring back with elastic recoil when the cursor sweeps past.",
+    "engineId": "neobrutalism-dots",
     "styles": {
-      "backgroundColor": "#f8f5eb",
+      "backgroundColor": "transparent",
       "color": "#000000",
       "border": "none",
       "borderRadius": "0px",
       "boxShadow": "none"
     },
-    "cssText": "background-color: #f8f5eb !important; background-image: radial-gradient(#000000 2px, transparent 2px) !important; background-size: 24px 24px !important; background-repeat: repeat !important; color: #000000 !important;",
+    "cssText": "color: #000000 !important;",
     "html": "",
     "js": ""
   },
   {
     "id": "background-luxury-velvet",
-    "name": "Emerald Velvet Aura",
+    "name": "Interactive Emerald & Liquid Gold Stardust",
     "category": "background",
     "theme": "Luxury Gold & Velvet",
-    "description": "Rich dark emerald velvet gradient evoking high-end luxury materials.",
+    "description": "Rich emerald velvet with floating golden stardust particles gravitationally drawn to cursor paths with glowing trails.",
+    "engineId": "luxury-gold",
     "styles": {
-      "backgroundColor": "#02150e",
+      "backgroundColor": "transparent",
       "color": "#d4af37",
       "border": "none",
       "borderRadius": "0px",
       "boxShadow": "none"
     },
-    "cssText": "background-color: #02150e !important; background-image: radial-gradient(ellipse at 50% 30%, #0d4231 0%, #05261b 60%, #02150e 100%) !important; background-size: 100% 100% !important; background-repeat: no-repeat !important; color: #d4af37 !important;",
+    "cssText": "color: #d4af37 !important;",
     "html": "",
     "js": ""
   },
   {
     "id": "background-cyberpunk-matrix",
-    "name": "Matrix Phosphor Scanlines",
+    "name": "Interactive Cyber Phosphor Matrix Rain",
     "category": "background",
     "theme": "Cyberpunk Neon Matrix",
-    "description": "Pitch black canvas with phosphor green interlaced scanlines.",
+    "description": "Pitch-black canvas with falling digital phosphor glyphs that scatter into glowing laser rings around the cursor.",
+    "engineId": "matrix-rain",
     "styles": {
-      "backgroundColor": "#020905",
+      "backgroundColor": "transparent",
       "color": "#00ff66",
       "border": "none",
       "borderRadius": "0px",
       "boxShadow": "none"
     },
-    "cssText": "background-color: #020905 !important; background-image: repeating-linear-gradient(0deg, rgba(0, 255, 102, 0.12), rgba(0, 255, 102, 0.12) 1.5px, transparent 1.5px, transparent 4px), radial-gradient(ellipse at center, rgba(0, 255, 102, 0.18) 0%, #020905 85%) !important; background-size: 100% 100%, 100% 100% !important; background-repeat: repeat, no-repeat !important; font-family: monospace !important; color: #00ff66 !important;",
+    "cssText": "font-family: monospace !important; color: #00ff66 !important;",
     "html": "",
     "js": ""
-  },
-  {
-    "id": "background-repulsion-image-reveal",
-    "name": "Repulsion Image Reveal Canvas",
-    "category": "background",
-    "theme": "Vogue / High-Fashion Editorial",
-    "description": "Interactive canvas particle grid that expands dynamically on cursor proximity to reveal a hidden underlying artwork behind your page content.",
-    "styles": {
-      "backgroundColor": "#e0dad5",
-      "color": "",
-      "border": "",
-      "borderRadius": "",
-      "boxShadow": ""
-    },
-    "cssText": "background-color: #e0dad5 !important;",
-    "html": "",
-    "js": "(function(targetEl) {\n  const el = targetEl || document.body;\n  const isFullPage = (el === document.body || el === document.documentElement || el.tagName.toLowerCase() === \"main\" || el.id === \"rcnt\");\n\n  // Remove existing canvas\n  let existing = document.getElementById(\"imagine-repulsion-canvas-global\") || el.querySelector(\":scope > .imagine-webgl-canvas\");\n  if (existing) existing.remove();\n\n  const canvas = document.createElement(\"canvas\");\n  canvas.className = \"imagine-webgl-canvas\";\n\n  if (isFullPage) {\n    canvas.id = \"imagine-repulsion-canvas-global\";\n    canvas.style.cssText = \"position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:-1;pointer-events:none;display:block;\";\n    document.body.prepend(canvas);\n    document.documentElement.style.setProperty(\"background-color\", \"transparent\", \"important\");\n    document.body.style.setProperty(\"background-color\", \"transparent\", \"important\");\n  } else {\n    const compPos = window.getComputedStyle(el).position;\n    if (compPos === \"static\") el.style.position = \"relative\";\n    canvas.style.cssText = \"position:absolute;top:0;left:0;width:100%;height:100%;z-index:0;pointer-events:none;display:block;border-radius:inherit;\";\n    el.prepend(canvas);\n  }\n\n  const context = canvas.getContext(\"2d\");\n  if (!context) return;\n\n  const parameters = {\n    size: 28,\n    radius: 1.5,\n    proximity: 140,\n    growth: 65,\n    ease: 0.08\n  };\n\n  class Circle {\n    constructor(radius, x, y) {\n      this._radius = radius;\n      this.radius = radius;\n      this.growthValue = 0;\n      this.x = x;\n      this.y = y;\n    }\n    draw(ctx, ease) {\n      this.radius += ((this._radius + this.growthValue) - this.radius) * ease;\n      if (this.radius > 0.2) {\n        ctx.moveTo(this.x + this.radius, this.y);\n        ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);\n      }\n    }\n    addRadius(val) {\n      this.growthValue = val;\n    }\n  }\n\n  let circles = [];\n  let width = 0, height = 0;\n\n  function resize() {\n    const rect = isFullPage ? { width: window.innerWidth, height: window.innerHeight } : el.getBoundingClientRect();\n    width = Math.max(1, Math.round(rect.width));\n    height = Math.max(1, Math.round(rect.height));\n    if (canvas.width !== width || canvas.height !== height) {\n      canvas.width = width;\n      canvas.height = height;\n    }\n    buildGrid();\n    renderFallbackArt();\n  }\n\n  function buildGrid() {\n    circles = [];\n    const { size, radius } = parameters;\n    const cols = Math.ceil(width / size) + 1;\n    const rows = Math.ceil(height / size) + 1;\n    const total = cols * rows;\n    for (let i = 0; i < total; i++) {\n      const c = i % cols;\n      const r = Math.floor(i / cols);\n      circles.push(new Circle(radius, c * size, r * size));\n    }\n  }\n\n  // Create an instant generative artwork canvas so it works 100% offline & without CDN dependency\n  const artCanvas = document.createElement(\"canvas\");\n  const artCtx = artCanvas.getContext(\"2d\");\n\n  function renderFallbackArt() {\n    artCanvas.width = width || 800;\n    artCanvas.height = height || 600;\n    const grad = artCtx.createLinearGradient(0, 0, artCanvas.width, artCanvas.height);\n    grad.addColorStop(0, \"#ff416c\");\n    grad.addColorStop(0.35, \"#ff4b2b\");\n    grad.addColorStop(0.7, \"#8a2387\");\n    grad.addColorStop(1, \"#3f51b5\");\n    artCtx.fillStyle = grad;\n    artCtx.fillRect(0, 0, artCanvas.width, artCanvas.height);\n\n    // Decorative geometric patterns on artwork\n    artCtx.fillStyle = \"rgba(255, 255, 255, 0.15)\";\n    for (let i = 0; i < 15; i++) {\n      artCtx.beginPath();\n      artCtx.arc(\n        (i * 137.5) % artCanvas.width,\n        (i * 93.2) % artCanvas.height,\n        (i * 22) % 180 + 30,\n        0,\n        Math.PI * 2\n      );\n      artCtx.fill();\n    }\n  }\n\n  // Also load rich external image if available\n  let onlineImage = new Image();\n  let onlineImageLoaded = false;\n  onlineImage.crossOrigin = \"anonymous\";\n  onlineImage.onload = () => { onlineImageLoaded = true; };\n  onlineImage.src = \"https://images.unsplash.com/photo-1541701494587-cb58502866ab?w=1600&q=80\";\n\n  let mouse = { x: -9999, y: -9999, active: false };\n\n  function updateMousePos(clientX, clientY) {\n    if (isFullPage) {\n      mouse.x = clientX;\n      mouse.y = clientY;\n    } else {\n      const rect = el.getBoundingClientRect();\n      mouse.x = clientX - rect.left;\n      mouse.y = clientY - rect.top;\n    }\n    mouse.active = true;\n  }\n\n  function handlePointer(e) {\n    updateMousePos(e.clientX, e.clientY);\n  }\n\n  function handleTouch(e) {\n    if (e.touches && e.touches[0]) {\n      updateMousePos(e.touches[0].clientX, e.touches[0].clientY);\n    }\n  }\n\n  window.addEventListener(\"pointermove\", handlePointer, { passive: true, capture: true });\n  window.addEventListener(\"mousemove\", handlePointer, { passive: true, capture: true });\n  window.addEventListener(\"touchmove\", handleTouch, { passive: true, capture: true });\n  document.addEventListener(\"pointermove\", handlePointer, { passive: true, capture: true });\n\n  resize();\n  const ro = (typeof ResizeObserver !== \"undefined\" && !isFullPage) ? new ResizeObserver(resize) : null;\n  if (ro) ro.observe(el);\n  window.addEventListener(\"resize\", resize);\n\n  let frameCount = 0;\n\n  function animate() {\n    if (!canvas.isConnected) {\n      if (ro) ro.disconnect();\n      window.removeEventListener(\"resize\", resize);\n      window.removeEventListener(\"pointermove\", handlePointer, { capture: true });\n      window.removeEventListener(\"mousemove\", handlePointer, { capture: true });\n      window.removeEventListener(\"touchmove\", handleTouch, { capture: true });\n      document.removeEventListener(\"pointermove\", handlePointer, { capture: true });\n      return;\n    }\n\n    frameCount++;\n\n    // Ambient floating ripple if cursor hasn't moved yet\n    let targetX = mouse.x;\n    let targetY = mouse.y;\n    if (!mouse.active) {\n      targetX = width / 2 + Math.cos(frameCount * 0.02) * (width * 0.25);\n      targetY = height / 2 + Math.sin(frameCount * 0.03) * (height * 0.25);\n    }\n\n    // Update circle growth based on distance to cursor\n    const { proximity, growth } = parameters;\n    for (let i = 0; i < circles.length; i++) {\n      const c = circles[i];\n      const dx = c.x - targetX;\n      const dy = c.y - targetY;\n      const dist = Math.sqrt(dx * dx + dy * dy);\n      if (dist < proximity) {\n        const factor = (1 - dist / proximity);\n        c.addRadius(factor * growth);\n      } else {\n        c.addRadius(0);\n      }\n    }\n\n    // 1. Draw base solid canvas background\n    context.clearRect(0, 0, width, height);\n    context.fillStyle = \"#e0dad5\";\n    context.fillRect(0, 0, width, height);\n\n    // 2. Begin clipping path for all expanding circles\n    context.save();\n    context.beginPath();\n    for (let i = 0; i < circles.length; i++) {\n      circles[i].draw(context, parameters.ease);\n    }\n    context.clip();\n\n    // 3. Draw artwork inside clipped circles\n    if (onlineImageLoaded && onlineImage.naturalWidth > 0) {\n      const nw = onlineImage.naturalWidth;\n      const nh = onlineImage.naturalHeight;\n      const scale = Math.max(width / nw, height / nh);\n      const dw = nw * scale;\n      const dh = nh * scale;\n      const dx = (width - dw) / 2;\n      const dy = (height - dh) / 2;\n      context.drawImage(onlineImage, dx, dy, dw, dh);\n    } else {\n      context.drawImage(artCanvas, 0, 0, width, height);\n    }\n\n    context.restore();\n\n    requestAnimationFrame(animate);\n  }\n\n  requestAnimationFrame(animate);\n})(element);"
   },
   {
     "id": "div-anime-mecha",

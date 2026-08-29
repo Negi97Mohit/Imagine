@@ -27,6 +27,7 @@
         "modules/config.js",
         "modules/image-detector.js",
         "modules/overlay.js",
+        "modules/interactive-backgrounds.js",
         "modules/redesign.js",
         "content.js"
       ],

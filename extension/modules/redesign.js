@@ -264,11 +264,33 @@ const RedesignMode = (() => {
           el.dataset.imagineHtmlModified = "true";
         } catch (e) {}
       }
-      if (entry.js && entry.js.trim()) {
+      // Apply native interactive background engine (CSP-safe, no eval)
+      if (entry.engineId && typeof InteractiveBackgrounds !== "undefined") {
         try {
-          const fn = new Function("element", "target", entry.js);
-          fn(el, el);
-        } catch (err) {}
+          InteractiveBackgrounds.mount(el, entry.engineId);
+        } catch (err) {
+          console.error("[Redesign Error mounting interactive background]:", err);
+        }
+      } else if (entry.js && entry.js.trim()) {
+        // Fallback: try to resolve engine from JS content (for older saved entries)
+        if (typeof InteractiveBackgrounds !== "undefined") {
+          const resolvedEngine = InteractiveBackgrounds.resolveEngineId(entry.js);
+          if (resolvedEngine) {
+            try {
+              InteractiveBackgrounds.mount(el, resolvedEngine);
+            } catch (err) {
+              console.error("[Redesign Error mounting resolved background]:", err);
+            }
+          } else {
+            // User-written custom JS — try new Function, may fail on strict CSP pages
+            try {
+              const fn = new Function("element", "target", entry.js);
+              fn(el, el);
+            } catch (err) {
+              console.warn("[Redesign] Custom JS blocked by page CSP. Use a built-in background preset instead.", err.message);
+            }
+          }
+        }
       }
     });
 
@@ -280,7 +302,7 @@ const RedesignMode = (() => {
     const hasActiveBg = activeRedesignEntries.some((e) => {
       if (e.enabled === false) return false;
       const s = (e.selector || "").toLowerCase();
-      return s === "body" || s === "html" || (e.js && e.js.includes("imagine-webgl-canvas"));
+      return s === "body" || s === "html" || Boolean(e.engineId) || (e.js && (e.js.includes("imagine-webgl-canvas") || e.js.includes("imagine-interactive-canvas")));
     });
     updateBgPassthrough(hasActiveBg);
   }
@@ -297,12 +319,17 @@ const RedesignMode = (() => {
     removeRedesignStyleTag(entry.pushId || entry.id);
     const targets = safeQueryAll(entry.selector).filter((t) => !t.closest("#open-sesame-redesign-editor"));
     targets.forEach((el) => {
-      const elCanvas = el.querySelector(":scope > .imagine-webgl-canvas");
-      if (elCanvas) elCanvas.remove();
+      if (typeof InteractiveBackgrounds !== "undefined") {
+        InteractiveBackgrounds.unmount(el);
+      }
+      const canvases = el.querySelectorAll(":scope > .imagine-webgl-canvas, :scope > .imagine-interactive-canvas, :scope > .imagine-interactive-stamp");
+      canvases.forEach((c) => c.remove());
       restoreOriginalState(el);
     });
-    const globalCanvas = document.getElementById("imagine-webgl-canvas-global") || document.getElementById("webgl-canvas");
-    if (globalCanvas) globalCanvas.remove();
+    if (typeof InteractiveBackgrounds !== "undefined") {
+      InteractiveBackgrounds.unmount(document.body);
+    }
+    document.querySelectorAll("#imagine-webgl-canvas-global, #imagine-repulsion-canvas-global, #imagine-interactive-canvas-global, .imagine-interactive-canvas-global, .imagine-interactive-stamp-global, #webgl-canvas").forEach((c) => c.remove());
     checkActiveBgPassthrough();
   }
 
@@ -329,7 +356,7 @@ const RedesignMode = (() => {
   }
 
   // ---- Live Preview helper ----
-  function applyLivePreview(el, { styles, cssText, html, js }) {
+  function applyLivePreview(el, { styles, cssText, html, js, engineId } = {}) {
     if (!el || el.closest("#open-sesame-redesign-editor")) return;
     saveOriginalState(el);
 
@@ -390,16 +417,35 @@ const RedesignMode = (() => {
       delete el.dataset.imagineHtmlModified;
     }
 
-    // Apply JS live
-    if (js && js.trim()) {
+    // Apply native interactive background engine (CSP-safe, zero eval)
+    if (engineId && typeof InteractiveBackgrounds !== "undefined") {
       try {
-        const fn = new Function("element", "target", js);
-        fn(el, el);
-      } catch (e) {}
+        InteractiveBackgrounds.mount(el, engineId);
+      } catch (err) {
+        console.error("[Redesign Error mounting live interactive background]:", err);
+      }
+    } else if (js && js.trim()) {
+      if (typeof InteractiveBackgrounds !== "undefined") {
+        const resolvedEngine = InteractiveBackgrounds.resolveEngineId(js);
+        if (resolvedEngine) {
+          try {
+            InteractiveBackgrounds.mount(el, resolvedEngine);
+          } catch (err) {
+            console.error("[Redesign Error mounting resolved live background]:", err);
+          }
+        } else {
+          try {
+            const fn = new Function("element", "target", js);
+            fn(el, el);
+          } catch (err) {
+            console.warn("[Redesign] Custom JS blocked by page CSP. Use a built-in background preset instead.", err.message);
+          }
+        }
+      }
     }
 
     // Trigger transparent passthrough during live preview of background/shaders
-    const isBgShader = (js && js.includes("imagine-webgl-canvas")) || (styles?.backgroundColor === "transparent" && !styles?.border);
+    const isBgShader = Boolean(engineId) || (js && (js.includes("imagine-webgl-canvas") || js.includes("imagine-interactive-canvas"))) || (styles?.backgroundColor === "transparent" && !styles?.border);
     if (isBgShader) {
       updateBgPassthrough(true);
     }
@@ -408,13 +454,16 @@ const RedesignMode = (() => {
   function clearLivePreview(el) {
     const previewStyle = document.getElementById(PREVIEW_STYLE_ID);
     if (previewStyle) previewStyle.remove();
+    if (typeof InteractiveBackgrounds !== "undefined") {
+      if (el) InteractiveBackgrounds.unmount(el);
+      InteractiveBackgrounds.unmount(document.body);
+    }
     if (el) {
-      const elCanvas = el.querySelector(":scope > .imagine-webgl-canvas");
-      if (elCanvas) elCanvas.remove();
+      const canvases = el.querySelectorAll(":scope > .imagine-webgl-canvas, :scope > .imagine-interactive-canvas, :scope > .imagine-interactive-stamp");
+      canvases.forEach((c) => c.remove());
       restoreOriginalState(el);
     }
-    const globalCanvas = document.getElementById("imagine-webgl-canvas-global") || document.getElementById("webgl-canvas");
-    if (globalCanvas) globalCanvas.remove();
+    document.querySelectorAll("#imagine-webgl-canvas-global, #imagine-repulsion-canvas-global, #imagine-interactive-canvas-global, .imagine-interactive-canvas-global, .imagine-interactive-stamp-global, #webgl-canvas").forEach((c) => c.remove());
     checkActiveBgPassthrough();
   }
 
@@ -500,6 +549,7 @@ const RedesignMode = (() => {
     if (oldPanel) oldPanel.remove();
 
     saveOriginalState(el);
+    let currentEngineId = existingEntry?.engineId || null;
     let isGlobalScope = existingEntry?.scope === "global" || false;
     let selector = existingEntry?.selector || buildResilientSelector(el, isGlobalScope);
     const tagName = el.tagName.toLowerCase();
@@ -871,7 +921,7 @@ const RedesignMode = (() => {
             if (!isSelected) {
               item.style.borderColor = "#6366f1";
               item.style.transform = "translateY(-1px)";
-              applyLivePreview(el, { styles: p.styles, cssText: p.cssText, html: p.html, js: p.js });
+              applyLivePreview(el, { styles: p.styles, cssText: p.cssText, html: p.html, js: p.js, engineId: p.engineId });
             }
           });
 
@@ -898,6 +948,7 @@ const RedesignMode = (() => {
 
       function applyPresetValues(preset) {
         if (!preset) return;
+        currentEngineId = preset.engineId || null;
         const nameInput = panel.querySelector("#os-rd-name");
         const bgInput = panel.querySelector("#os-rd-bg");
         const colorInput = panel.querySelector("#os-rd-color");
@@ -1098,7 +1149,7 @@ const RedesignMode = (() => {
       styles.borderRadius = borderRadius;
       styles.boxShadow = shadow;
 
-      applyLivePreview(el, { styles, cssText, html, js });
+      applyLivePreview(el, { styles, cssText, html, js, engineId: currentEngineId });
     }
 
     function closeAndRevert() {
@@ -1146,6 +1197,7 @@ const RedesignMode = (() => {
         cssText,
         html,
         js,
+        engineId: currentEngineId || undefined,
         updatedAt: new Date().toISOString(),
       };
 
