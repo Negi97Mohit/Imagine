@@ -15,6 +15,15 @@
         ".write": true,
         ".validate": "newData.hasChildren(['name', 'js', 'createdAt']) && newData.child('name').isString() && newData.child('js').isString()"
       }
+    },
+    "redesigns": {
+      ".read": true,
+      "$domain": {
+        ".write": true,
+        "$pushId": {
+          ".validate": "newData.hasChildren(['selector', 'visibility', 'createdBy', 'createdAt']) && newData.child('selector').isString() && newData.child('visibility').isString() && newData.child('createdBy').isString() && newData.child('createdAt').isString()"
+        }
+      }
     }
   }
 }

@@ -27,6 +27,7 @@
         "modules/config.js",
         "modules/image-detector.js",
         "modules/overlay.js",
+        "modules/redesign.js",
         "content.js"
       ],
       "run_at": "document_idle"

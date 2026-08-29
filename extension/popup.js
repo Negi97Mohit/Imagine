@@ -14,6 +14,11 @@ const bindingsList = document.getElementById("bindingsList");
 const bindingsStatus = document.getElementById("bindingsStatus");
 const toggleBtn = document.getElementById("toggleInteractions");
 const toggleText = document.getElementById("toggleText");
+const redesignPanel = document.getElementById("redesignPanel");
+const redesignList = document.getElementById("redesignList");
+const redesignCount = document.getElementById("redesignCount");
+const redesignStatus = document.getElementById("redesignStatus");
+const startRedesignBtn = document.getElementById("startRedesignBtn");
 
 let activeTab = "local";
 let selectedInteraction = null;
@@ -311,10 +316,182 @@ navTabs.forEach((tab) => {
     if (pageBindingsPanel) pageBindingsPanel.hidden = mode !== "pageBindings";
     if (bindPanel) bindPanel.hidden = mode !== "bind";
     if (bindingsPanel) bindingsPanel.hidden = mode !== "bindings";
+    if (redesignPanel) redesignPanel.hidden = mode !== "redesign";
     if (mode === "bindings") loadBindings();
     if (mode === "pageBindings") scanPageImages();
+    if (mode === "redesign") loadPageRedesigns();
   });
 });
+
+// ---- Redesign Mode controls ----
+if (startRedesignBtn) {
+  startRedesignBtn.addEventListener("click", () => {
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabsList) => {
+      if (!tabsList[0]) return;
+      chrome.tabs.sendMessage(tabsList[0].id, { type: "START_REDESIGN_PICKER" }, () => {
+        void chrome.runtime.lastError;
+        window.close();
+      });
+    });
+  });
+}
+
+function updateRedesignBadge(count) {
+  if (redesignCount) {
+    redesignCount.textContent = String(count || 0);
+    if (count > 0) redesignCount.classList.add("has-count");
+    else redesignCount.classList.remove("has-count");
+  }
+}
+
+function loadPageRedesigns() {
+  if (!redesignList) return;
+  redesignList.innerHTML = `<div class="empty-state">Loading redesigns on this page…</div>`;
+
+  chrome.tabs.query({ active: true, currentWindow: true }, (tabsList) => {
+    if (!tabsList[0] || !tabsList[0].id) {
+      redesignList.innerHTML = `<div class="empty-state">Cannot access this page</div>`;
+      updateRedesignBadge(0);
+      return;
+    }
+
+    const tabId = tabsList[0].id;
+    chrome.tabs.sendMessage(tabId, { type: "GET_PAGE_REDESIGNS" }, async (res) => {
+      let items = [];
+      let domain = "";
+      if (!chrome.runtime.lastError && res && res.items) {
+        items = res.items;
+        domain = res.domain;
+      } else {
+        // Fallback to storage
+        try {
+          const url = new URL(tabsList[0].url);
+          domain = url.hostname;
+          const key = `redesigns_${domain}`;
+          const store = await chrome.storage.local.get(key);
+          items = Array.isArray(store[key]) ? store[key] : [];
+        } catch (e) {}
+      }
+
+      renderRedesignList(items, domain, tabId);
+    });
+  });
+}
+
+function renderRedesignList(items, domain, tabId) {
+  if (!redesignList) return;
+  redesignList.innerHTML = "";
+  updateRedesignBadge(items ? items.length : 0);
+
+  if (!items || !items.length) {
+    redesignList.innerHTML = `
+      <div class="empty-state">
+        <div class="icon">✦</div>
+        No element redesigns on this page yet.<br><br>
+        Click the button above to redesign any element.
+      </div>
+    `;
+    return;
+  }
+
+  items.forEach((item) => {
+    const card = document.createElement("div");
+    card.className = "redesign-item-card";
+
+    const header = document.createElement("div");
+    header.className = "redesign-item-header";
+
+    const title = document.createElement("div");
+    title.className = "redesign-item-title";
+    title.textContent = item.name || "Element redesign";
+    header.appendChild(title);
+
+    // Switch for individual toggle
+    const switchLabel = document.createElement("label");
+    switchLabel.className = "switch";
+    switchLabel.title = "Toggle this redesign on/off";
+    const switchInput = document.createElement("input");
+    switchInput.type = "checkbox";
+    switchInput.checked = item.enabled !== false;
+    const switchSlider = document.createElement("span");
+    switchSlider.className = "slider";
+    switchLabel.appendChild(switchInput);
+    switchLabel.appendChild(switchSlider);
+
+    switchInput.addEventListener("change", () => {
+      const enabled = switchInput.checked;
+      chrome.tabs.sendMessage(tabId, {
+        type: "TOGGLE_PAGE_REDESIGN",
+        id: item.id || item.pushId || item.selector,
+        enabled,
+      });
+    });
+
+    header.appendChild(switchLabel);
+    card.appendChild(header);
+
+    const sel = document.createElement("div");
+    sel.className = "redesign-item-selector";
+    sel.textContent = item.selector;
+    card.appendChild(sel);
+
+    const footer = document.createElement("div");
+    footer.className = "redesign-item-footer";
+
+    const dateStr = item.updatedAt ? new Date(item.updatedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "Active";
+    const info = document.createElement("span");
+    info.style.cssText = "font-size:9.5px;color:var(--muted);";
+    info.textContent = dateStr;
+    footer.appendChild(info);
+
+    const actions = document.createElement("div");
+    actions.className = "redesign-item-actions";
+
+    const editBtn = document.createElement("button");
+    editBtn.className = "action-btn-sm";
+    editBtn.textContent = "Edit ✏️";
+    editBtn.addEventListener("click", () => {
+      chrome.tabs.sendMessage(
+        tabId,
+        {
+          type: "EDIT_PAGE_REDESIGN",
+          id: item.id || item.pushId || item.selector,
+        },
+        () => {
+          window.close();
+        }
+      );
+    });
+    actions.appendChild(editBtn);
+
+    const delBtn = document.createElement("button");
+    delBtn.className = "action-btn-sm danger";
+    delBtn.textContent = "Delete ✕";
+    delBtn.addEventListener("click", () => {
+      delBtn.disabled = true;
+      delBtn.textContent = "…";
+      chrome.tabs.sendMessage(
+        tabId,
+        {
+          type: "DELETE_PAGE_REDESIGN",
+          id: item.id || item.pushId || item.selector,
+        },
+        () => {
+          card.remove();
+          loadPageRedesigns();
+        }
+      );
+    });
+    actions.appendChild(delBtn);
+
+    footer.appendChild(actions);
+    card.appendChild(footer);
+    redesignList.appendChild(card);
+  });
+}
+
+// Pre-fetch count on load
+loadPageRedesigns();
 
 async function loadBindings() {
   const { myBindings = [] } = await chrome.storage.local.get("myBindings");

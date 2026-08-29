@@ -15,11 +15,25 @@ const STARTER_TEMPLATE = {
 
   function fit() {
     W = canvas.width; H = canvas.height;
-    const scale = Math.min(W / img.naturalWidth, H / img.naturalHeight);
-    iw = img.naturalWidth * scale;
-    ih = img.naturalHeight * scale;
-    ox = (W - iw) / 2;
-    oy = (H - ih) / 2;
+    const objFit = (config && config.objectFit) || "fill";
+    if (objFit === "cover") {
+      const scale = Math.max(W / (img.naturalWidth || W), H / (img.naturalHeight || H));
+      iw = (img.naturalWidth || W) * scale;
+      ih = (img.naturalHeight || H) * scale;
+      ox = (W - iw) / 2;
+      oy = (H - ih) / 2;
+    } else if (objFit === "contain") {
+      const scale = Math.min(W / (img.naturalWidth || W), H / (img.naturalHeight || H));
+      iw = (img.naturalWidth || W) * scale;
+      ih = (img.naturalHeight || H) * scale;
+      ox = (W - iw) / 2;
+      oy = (H - ih) / 2;
+    } else {
+      iw = W;
+      ih = H;
+      ox = 0;
+      oy = 0;
+    }
     render();
   }
 

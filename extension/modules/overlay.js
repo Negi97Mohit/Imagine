@@ -1,6 +1,11 @@
 // ---- Unified Overlay & Interactive '+' Picker Controller ----
 
 const AssetOverlay = (() => {
+  let activeMenuCloseFn = null; // Enforce single open menu across the page
+
+  const PLUS_ICON_SVG = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>`;
+  const CLOSE_ICON_SVG = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>`;
+
   // Inject ultra-thin scrollbar styles once
   if (!document.getElementById("locked-image-custom-styles")) {
     const style = document.createElement("style");
@@ -106,23 +111,24 @@ const AssetOverlay = (() => {
 
     const pin = makeEl(
       "div",
-      "position:fixed;width:24px;height:24px;border-radius:50%;" +
-        "background:#b8410e;color:#ffffff;display:none;align-items:center;" +
-        "justify-content:center;font-size:16px;font-weight:700;cursor:pointer;pointer-events:auto;" +
-        "opacity:0.85;transition:opacity 0.15s ease, transform 0.15s ease;box-shadow:0 2px 8px rgba(0,0,0,0.45);" +
+      "position:fixed;width:28px;height:28px;border-radius:50%;" +
+        "background:rgba(18,18,24,0.88);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);" +
+        "border:1px solid rgba(255,255,255,0.22);color:#ffffff;display:none;align-items:center;" +
+        "justify-content:center;cursor:pointer;pointer-events:auto;" +
+        "opacity:0.92;transition:all 0.18s cubic-bezier(0.16, 1, 0.3, 1);box-shadow:0 4px 14px rgba(0,0,0,0.35);" +
         "user-select:none;z-index:2147483647;"
     );
-    pin.textContent = "+";
+    pin.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>`;
     pin.title = "Manage interactions on this image";
     container.appendChild(pin);
 
     // Badge showing number of active bindings
     const badge = makeEl(
       "div",
-      "position:fixed;min-width:14px;height:14px;border-radius:7px;" +
-        "background:#0a0a0a;color:#fff;font-size:8px;font-weight:700;" +
-        "display:none;align-items:center;justify-content:center;padding:0 3px;" +
-        "pointer-events:none;z-index:2147483647;line-height:1;"
+      "position:fixed;min-width:15px;height:15px;border-radius:8px;" +
+        "background:#b8410e;color:#fff;font-size:8.5px;font-weight:700;" +
+        "display:none;align-items:center;justify-content:center;padding:0 4px;" +
+        "pointer-events:none;z-index:2147483647;line-height:1;box-shadow:0 2px 6px rgba(0,0,0,0.3);"
     );
     container.appendChild(badge);
 
@@ -193,9 +199,15 @@ const AssetOverlay = (() => {
         if (isPinHovered) {
           pin.style.opacity = "1";
           pin.style.transform = "scale(1.15)";
+          pin.style.background = "#b8410e";
+          pin.style.borderColor = "#ea580c";
+          pin.style.boxShadow = "0 6px 20px rgba(184, 65, 14, 0.5)";
         } else {
-          pin.style.opacity = "0.85";
+          pin.style.opacity = "0.92";
           pin.style.transform = "scale(1)";
+          pin.style.background = "rgba(18,18,24,0.88)";
+          pin.style.borderColor = "rgba(255,255,255,0.22)";
+          pin.style.boxShadow = "0 4px 14px rgba(0,0,0,0.35)";
         }
         updateBadge();
       } else {
@@ -208,6 +220,7 @@ const AssetOverlay = (() => {
         overlayIframe.style.top = r.top + "px";
         overlayIframe.style.width = r.width + "px";
         overlayIframe.style.height = r.height + "px";
+        recalcOverlayStacking();
       }
 
       if (menuEl) {
@@ -224,28 +237,40 @@ const AssetOverlay = (() => {
       });
     }
 
-    // ---- Menu: Show All Interactions + Multi-binding List ----
+    // ---- Chic & Minimal Menu: Interactions List ----
     async function openMenu() {
       if (menuEl) {
         closeMenu();
         return;
       }
 
+      // Enforce only one open menu across the page
+      if (activeMenuCloseFn && activeMenuCloseFn !== closeMenu) {
+        activeMenuCloseFn();
+      }
+      activeMenuCloseFn = closeMenu;
+
+      // Switch icon from '+' to '✕' close sign
+      pin.innerHTML = CLOSE_ICON_SVG;
+      pin.title = "Close menu";
+      pin.style.background = "#18181b";
+      pin.style.borderColor = "rgba(255,255,255,0.4)";
+
       menuEl = makeEl(
         "div",
-        "position:fixed;width:270px;max-height:min(75vh, 440px);overflow-y:auto;" +
-          "background:#ffffff;color:#0a0a0a;border:1px solid #1a1a1a;box-shadow:0 6px 20px rgba(0,0,0,0.3);" +
-          "padding:10px;font-family:Inter,sans-serif;font-size:11px;z-index:2147483647;pointer-events:auto;" +
-          "border-radius:6px;",
+        "position:fixed;width:280px;max-height:min(78vh, 460px);overflow-y:auto;" +
+          "background:#ffffff;color:#18181b;border:1px solid #e4e4e7;box-shadow:0 12px 36px rgba(0,0,0,0.12);" +
+          "padding:14px;font-family:-apple-system,BlinkMacSystemFont,Inter,system-ui,sans-serif;font-size:11.5px;z-index:2147483647;pointer-events:auto;" +
+          "border-radius:12px;",
         "locked-image-menu"
       );
 
       positionMenu(currentPinLeft, currentPinTop);
 
-      // Top Notice Banner (for warnings / already-applied alerts)
+      // Top Notice Banner
       const noticeEl = makeEl(
         "div",
-        "display:none;margin-bottom:8px;padding:6px 8px;border-radius:3px;font-size:10px;line-height:1.3;border:1px solid transparent;"
+        "display:none;margin-bottom:10px;padding:8px 10px;border-radius:6px;font-size:10.5px;line-height:1.4;border:1px solid transparent;"
       );
       menuEl.appendChild(noticeEl);
 
@@ -259,17 +284,13 @@ const AssetOverlay = (() => {
         }
       };
 
-      // ---- Section: Currently active bindings on this image ----
+      // ---- Section: Active Interactions ----
       const visibleBindings = allBindings.filter((b) => !hiddenPushIds.has(b.pushId));
       if (visibleBindings.length > 0) {
-        const activeHeader = makeEl("div", "display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;");
-        const activeTitle = makeEl("div", "font-weight:700;font-size:10px;text-transform:uppercase;letter-spacing:0.05em;color:#b8410e;");
-        activeTitle.textContent = visibleBindings.length > 1 ? `Active Interactions (${visibleBindings.length})` : "Active Interaction";
+        const activeHeader = makeEl("div", "display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;");
+        const activeTitle = makeEl("div", "font-weight:700;font-size:10px;text-transform:uppercase;letter-spacing:0.06em;color:#71717a;display:flex;align-items:center;gap:5px;");
+        activeTitle.innerHTML = `<span style="width:6px;height:6px;border-radius:50%;background:#10b981;"></span> ${visibleBindings.length > 1 ? `Active (${visibleBindings.length})` : "Active Interaction"}`;
         activeHeader.appendChild(activeTitle);
-
-        const tip = makeEl("div", "font-size:8.5px;color:#888;");
-        tip.textContent = "Click to preview";
-        activeHeader.appendChild(tip);
         menuEl.appendChild(activeHeader);
 
         visibleBindings.forEach((b) => {
@@ -278,32 +299,24 @@ const AssetOverlay = (() => {
 
           const row = makeEl(
             "div",
-            `padding:6px 8px;background:${isCurrentActive ? "#eff6ff" : "#f0ede8"};border:1px solid ${isCurrentActive ? "#3b82f6" : "#ddd"};border-radius:3px;margin-bottom:4px;display:flex;align-items:center;gap:6px;cursor:pointer;transition:all 0.15s ease;`
+            `padding:8px 10px;background:${isCurrentActive ? "#f4f4f5" : "#ffffff"};border:1px solid ${isCurrentActive ? "#18181b" : "#e4e4e7"};border-radius:8px;margin-bottom:5px;display:flex;align-items:center;gap:8px;cursor:pointer;transition:all 0.15s ease;`
           );
           row.setAttribute("data-push-id", b.pushId);
           row.setAttribute("data-name", (b.interaction.name || "").toLowerCase());
 
-          // Active indicator icon
-          const icon = makeEl("span", `font-size:10px;font-weight:bold;color:${isCurrentActive ? "#2563eb" : "#888"};`);
-          icon.textContent = isCurrentActive ? "▶" : "•";
+          const icon = makeEl("span", `font-size:10px;font-weight:bold;color:${isCurrentActive ? "#18181b" : "#a1a1aa"};`);
+          icon.textContent = isCurrentActive ? "●" : "○";
           row.appendChild(icon);
 
-          const nameSpan = makeEl("span", `flex:1;font-weight:${isCurrentActive ? "700" : "600"};font-size:10.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:${isCurrentActive ? "#1d4ed8" : "#111"};`);
+          const nameSpan = makeEl("span", `flex:1;font-weight:${isCurrentActive ? "600" : "500"};font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#18181b;`);
           nameSpan.textContent = b.interaction.name || "Untitled";
-          nameSpan.title = isCurrentActive ? "Currently playing" : "Click to view this interaction";
           row.appendChild(nameSpan);
 
-          if (isCurrentActive) {
-            const activeTag = makeEl("span", "font-size:8px;font-weight:700;background:#dbeafe;color:#1e40af;padding:1px 4px;border-radius:2px;flex-shrink:0;");
-            activeTag.textContent = "Playing";
-            row.appendChild(activeTag);
-          }
-
           if (isMine) {
-            // Owner can remove their binding
-            const removeBtn = makeEl("button", "background:#c53a2a;color:#fff;border:none;font-size:8px;padding:2px 5px;cursor:pointer;border-radius:2px;font-weight:600;flex-shrink:0;");
-            removeBtn.textContent = "✕";
-            removeBtn.title = "Remove your interaction";
+            const removeBtn = makeEl("button", "background:transparent;color:#ef4444;border:1px solid rgba(239,68,68,0.3);font-size:9px;padding:2px 6px;cursor:pointer;border-radius:4px;font-weight:600;flex-shrink:0;transition:all 0.15s ease;");
+            removeBtn.textContent = "Remove";
+            removeBtn.onmouseenter = () => { removeBtn.style.background = "#ef4444"; removeBtn.style.color = "#fff"; };
+            removeBtn.onmouseleave = () => { removeBtn.style.background = "transparent"; removeBtn.style.color = "#ef4444"; };
             removeBtn.onclick = (e) => {
               e.stopPropagation();
               onUnbind && onUnbind(b.pushId);
@@ -311,10 +324,8 @@ const AssetOverlay = (() => {
             };
             row.appendChild(removeBtn);
           } else {
-            // Others can hide it locally
-            const hideBtn = makeEl("button", "background:#888;color:#fff;border:none;font-size:8px;padding:2px 5px;cursor:pointer;border-radius:2px;font-weight:600;flex-shrink:0;");
+            const hideBtn = makeEl("button", "background:transparent;color:#71717a;border:1px solid #e4e4e7;font-size:9px;padding:2px 6px;cursor:pointer;border-radius:4px;font-weight:500;flex-shrink:0;");
             hideBtn.textContent = "Hide";
-            hideBtn.title = "Hide this interaction (only for you)";
             hideBtn.onclick = async (e) => {
               e.stopPropagation();
               hiddenPushIds.add(b.pushId);
@@ -333,10 +344,6 @@ const AssetOverlay = (() => {
             row.appendChild(hideBtn);
           }
 
-          const authorTag = makeEl("span", "font-size:8px;color:#888;flex-shrink:0;");
-          authorTag.textContent = isMine ? "(you)" : "";
-          row.appendChild(authorTag);
-
           row.onclick = (e) => {
             if (e.target.tagName === "BUTTON") return;
             e.stopPropagation();
@@ -349,25 +356,7 @@ const AssetOverlay = (() => {
           menuEl.appendChild(row);
         });
 
-        // Show hidden count if any
-        const hiddenCount = allBindings.filter((b) => hiddenPushIds.has(b.pushId)).length;
-        if (hiddenCount > 0) {
-          const showHidden = makeEl("div", "font-size:9px;color:#888;cursor:pointer;margin-bottom:4px;text-decoration:underline;");
-          showHidden.textContent = `Show ${hiddenCount} hidden interaction${hiddenCount > 1 ? "s" : ""}`;
-          showHidden.onclick = async (e) => {
-            e.stopPropagation();
-            hiddenPushIds.clear();
-            const { hiddenBindings = {} } = await chrome.storage.local.get("hiddenBindings");
-            delete hiddenBindings[assetId];
-            await chrome.storage.local.set({ hiddenBindings });
-            closeMenu();
-            openMenu();
-            updateBadge();
-          };
-          menuEl.appendChild(showHidden);
-        }
-
-        const divider = makeEl("div", "border-top:1px solid #ddd;margin:8px 0;");
+        const divider = makeEl("div", "border-top:1px solid #f4f4f5;margin:10px 0;");
         menuEl.appendChild(divider);
       }
 
@@ -379,7 +368,6 @@ const AssetOverlay = (() => {
         const candidateName = (candidate.name || "Untitled").trim();
         const normName = candidateName.toLowerCase();
 
-        // 1. Check if this exact interaction is already applied by someone else
         const existing = allBindings.find(
           (b) => (b.interaction?.name || "").trim().toLowerCase() === normName
         );
@@ -387,10 +375,10 @@ const AssetOverlay = (() => {
         if (existing) {
           const isMine = myUserId && existing.createdBy === myUserId;
           if (isMine) {
-            noticeEl.innerHTML = `ℹ️ <b>${candidateName}</b> is already your active interaction on this image.`;
-            noticeEl.style.background = "#eff6ff";
-            noticeEl.style.borderColor = "#3b82f6";
-            noticeEl.style.color = "#1e40af";
+            noticeEl.innerHTML = `ℹ️ <b>${candidateName}</b> is already active.`;
+            noticeEl.style.background = "#f4f4f5";
+            noticeEl.style.borderColor = "#e4e4e7";
+            noticeEl.style.color = "#18181b";
             noticeEl.style.display = "block";
             activeBinding = existing.interaction;
             closeMenu();
@@ -398,9 +386,9 @@ const AssetOverlay = (() => {
             activateSandbox();
             return;
           } else {
-            noticeEl.innerHTML = `⚠️ <b>"${candidateName}"</b> has already been applied to this image by another user.<br><span style="font-size:9px;color:#7f1d1d;">See the highlighted item above in Active Interactions.</span>`;
+            noticeEl.innerHTML = `⚠️ <b>"${candidateName}"</b> is already bound by another user.`;
             noticeEl.style.background = "#fef2f2";
-            noticeEl.style.borderColor = "#ef4444";
+            noticeEl.style.borderColor = "#fecaca";
             noticeEl.style.color = "#991b1b";
             noticeEl.style.display = "block";
             menuEl.scrollTop = 0;
@@ -409,7 +397,6 @@ const AssetOverlay = (() => {
           }
         }
 
-        // 2. Not duplicate -> activate immediately for creator and bind in background
         activeBinding = candidate;
         closeMenu();
         deactivateSandbox();
@@ -421,9 +408,9 @@ const AssetOverlay = (() => {
             activeBinding = null;
             deactivateSandbox();
             openMenu();
-            noticeEl.innerHTML = `⚠️ <b>"${candidateName}"</b> has already been applied to this image by another user.`;
+            noticeEl.innerHTML = `⚠️ <b>"${candidateName}"</b> is already applied.`;
             noticeEl.style.background = "#fef2f2";
-            noticeEl.style.borderColor = "#ef4444";
+            noticeEl.style.borderColor = "#fecaca";
             noticeEl.style.color = "#991b1b";
             noticeEl.style.display = "block";
             if (res.existingBinding?.pushId) {
@@ -433,21 +420,14 @@ const AssetOverlay = (() => {
         }
       };
 
-      // ---- Section: Add / Update interaction ----
+      // ---- Section: Add / Change Interaction ----
       const userHasBinding = myUserId && allBindings.some((b) => b.createdBy === myUserId);
-      const addTitle = makeEl("div", "font-weight:700;font-size:10px;margin-bottom:2px;text-transform:uppercase;letter-spacing:0.05em;color:#b8410e;");
-      addTitle.textContent = userHasBinding ? "Change Your Interaction" : "Add Interaction";
+      const addTitle = makeEl("div", "font-weight:700;font-size:10px;margin-bottom:6px;text-transform:uppercase;letter-spacing:0.06em;color:#71717a;");
+      addTitle.textContent = userHasBinding ? "Change Interaction" : "Choose Interaction";
       menuEl.appendChild(addTitle);
 
-      const addSub = makeEl("div", "font-size:8.5px;color:#777;margin-bottom:6px;");
-      addSub.textContent = userHasBinding
-        ? "Selecting a new one will replace your current interaction."
-        : "Apply your interaction to this image.";
-      menuEl.appendChild(addSub);
+      const listDiv = makeEl("div", "display:flex;flex-direction:column;gap:4px;");
 
-      const listDiv = makeEl("div", "display:flex;flex-direction:column;gap:3px;");
-
-      // 1. Dynamic Interactions from Realtime Database
       let templates = [];
       try {
         const res = await new Promise((resolve) => {
@@ -460,10 +440,10 @@ const AssetOverlay = (() => {
 
       if (templates.length) {
         templates.forEach((t) => {
-          const item = makeEl("div", "padding:6px 9px;background:#f4f1ec;cursor:pointer;border:1px solid #e2ded8;font-weight:600;border-radius:4px;font-size:11px;transition:background 0.15s ease;display:flex;align-items:center;gap:5px;");
+          const item = makeEl("div", "padding:7px 10px;background:#fbfbfa;cursor:pointer;border:1px solid #e4e4e7;font-weight:500;border-radius:6px;font-size:11px;transition:all 0.15s ease;display:flex;align-items:center;gap:6px;color:#18181b;");
           item.textContent = `★ ${t.name || "Untitled"}`;
-          item.onmouseenter = () => { item.style.background = "#eadecf"; item.style.borderColor = "#ca8a04"; };
-          item.onmouseleave = () => { item.style.background = "#f4f1ec"; item.style.borderColor = "#e2ded8"; };
+          item.onmouseenter = () => { item.style.background = "#f4f4f5"; item.style.borderColor = "#18181b"; };
+          item.onmouseleave = () => { item.style.background = "#fbfbfa"; item.style.borderColor = "#e4e4e7"; };
           item.onclick = (e) => {
             e.stopPropagation();
             handleSelectInteraction(t);
@@ -472,15 +452,16 @@ const AssetOverlay = (() => {
         });
       }
 
-      // 2. Local interactions
       const { myInteractions = [] } = await chrome.storage.local.get("myInteractions");
       if (myInteractions.length) {
-        const head = makeEl("div", "font-size:9px;color:#888;text-transform:uppercase;margin-top:5px;");
-        head.textContent = "My Library:";
+        const head = makeEl("div", "font-size:9.5px;color:#71717a;text-transform:uppercase;margin-top:6px;font-weight:600;letter-spacing:0.05em;");
+        head.textContent = "My Library";
         listDiv.appendChild(head);
         myInteractions.forEach((it) => {
-          const item = makeEl("div", "padding:5px 8px;background:#fff;border:1px solid #1a1a1a;cursor:pointer;border-radius:2px;font-size:10.5px;");
+          const item = makeEl("div", "padding:6px 10px;background:#fff;border:1px solid #e4e4e7;cursor:pointer;border-radius:6px;font-size:11px;color:#18181b;font-weight:500;");
           item.textContent = it.name || "Untitled";
+          item.onmouseenter = () => { item.style.borderColor = "#18181b"; };
+          item.onmouseleave = () => { item.style.borderColor = "#e4e4e7"; };
           item.onclick = (e) => {
             e.stopPropagation();
             handleSelectInteraction(it);
@@ -489,9 +470,10 @@ const AssetOverlay = (() => {
         });
       }
 
-      // 3. Create new
-      const createBtn = makeEl("button", "margin-top:6px;width:100%;padding:5px;background:#0a0a0a;color:#fff;border:none;cursor:pointer;font-size:9.5px;text-transform:uppercase;letter-spacing:0.05em;border-radius:2px;");
-      createBtn.textContent = "+ Create New in Editor";
+      const createBtn = makeEl("button", "margin-top:8px;width:100%;padding:8px 12px;background:#18181b;color:#ffffff;border:none;cursor:pointer;font-size:10.5px;font-weight:600;letter-spacing:0.02em;border-radius:6px;transition:all 0.15s ease;");
+      createBtn.textContent = "+ Create in Editor";
+      createBtn.onmouseenter = () => { createBtn.style.opacity = "0.85"; };
+      createBtn.onmouseleave = () => { createBtn.style.opacity = "1"; };
       createBtn.onclick = (e) => {
         e.stopPropagation();
         window.open(chrome.runtime.getURL("editor.html"), "_blank");
@@ -504,15 +486,23 @@ const AssetOverlay = (() => {
     }
 
     function closeMenu() {
+      if (activeMenuCloseFn === closeMenu) {
+        activeMenuCloseFn = null;
+      }
+      // Revert icon to '+'
+      pin.innerHTML = PLUS_ICON_SVG;
+      pin.title = "Manage interactions on this image";
+      pin.style.background = "rgba(18,18,24,0.88)";
+      pin.style.borderColor = "rgba(255,255,255,0.22)";
+
       if (menuEl) {
         menuEl.remove();
         menuEl = null;
-        if (hoverLeaveTimeout) clearTimeout(hoverLeaveTimeout);
-        hoverLeaveTimeout = setTimeout(() => {
-          if (!isPinVisible()) {
-            syncRect();
-          }
-        }, 50);
+      }
+      if (!isImgHovered && !isPinHovered) {
+        pin.style.display = "none";
+        badge.style.display = "none";
+        deactivateSandbox();
       }
     }
 
@@ -533,8 +523,54 @@ const AssetOverlay = (() => {
     pin.addEventListener("click", (e) => {
       e.stopPropagation();
       e.preventDefault();
-      openMenu();
+      if (menuEl) {
+        closeMenu();
+      } else {
+        openMenu();
+      }
     });
+
+    // ---- Task 1: Stacking-Context-Aware Overlay Placement & Hole-Punch Clipping ----
+    function getImageEffectiveZ(targetImg) {
+      let node = targetImg;
+      while (node && node !== document.documentElement && node !== document.body) {
+        const cs = getComputedStyle(node);
+        if (cs.zIndex && cs.zIndex !== "auto") {
+          const z = parseInt(cs.zIndex, 10);
+          if (!isNaN(z)) return z;
+        }
+        if (cs.position && cs.position !== "static") {
+          return 1;
+        }
+        node = node.parentElement;
+      }
+      return 1;
+    }
+
+    function recalcOverlayStacking() {
+      if (!overlayIframe) return;
+      const cs = getComputedStyle(img);
+      const zIndex = getImageEffectiveZ(img);
+      overlayIframe.style.zIndex = String(zIndex);
+      // Inherit original element's clipPath and borderRadius without artificial cut-offs
+      overlayIframe.style.clipPath = cs.clipPath && cs.clipPath !== "none" ? cs.clipPath : "";
+      overlayIframe.style.borderRadius = cs.borderRadius || "";
+    }
+
+    // ---- Task 2: Loading indicator matching the target's shape ----
+    function computeTargetShape() {
+      const cs = getComputedStyle(img);
+      const corners = [
+        cs.borderTopLeftRadius,
+        cs.borderTopRightRadius,
+        cs.borderBottomRightRadius,
+        cs.borderBottomLeftRadius,
+      ];
+      const hasRadius = corners.some((c) => parseFloat(c) > 0);
+      const clipPath = cs.clipPath && cs.clipPath !== "none" ? cs.clipPath : null;
+      if (!hasRadius && !clipPath) return null;
+      return { borderRadius: corners, clipPath };
+    }
 
     // ---- Sandbox Hover Playback ----
     function activateSandbox() {
@@ -542,14 +578,19 @@ const AssetOverlay = (() => {
       const r = rect();
       if (isTooSmall(r) || offscreen(r)) return;
 
+      const cs = getComputedStyle(img);
+      const objectFit = cs.objectFit || "fill";
+      const objectPosition = cs.objectPosition || "center";
+
       overlayIframe = document.createElement("iframe");
       overlayIframe.src = chrome.runtime.getURL("sandbox.html");
       overlayIframe.setAttribute("sandbox", "allow-scripts");
       overlayIframe.style.cssText =
         `position:fixed;left:${r.left}px;top:${r.top}px;` +
-        `width:${r.width}px;height:${r.height}px;z-index:2147483645;` +
-        `border:0;background:transparent;`;
+        `width:${r.width}px;height:${r.height}px;` +
+        `border:0;background:transparent;border-radius:${cs.borderRadius};overflow:hidden;`;
       document.body.appendChild(overlayIframe);
+      recalcOverlayStacking();
 
       function onMsg(ev) {
         if (ev.source !== overlayIframe?.contentWindow) return;
@@ -564,8 +605,14 @@ const AssetOverlay = (() => {
               width: Math.round(r.width),
               height: Math.round(r.height),
               interaction: activeBinding,
-              config: {},
+              config: {
+                objectFit,
+                objectPosition,
+                naturalWidth: img.naturalWidth,
+                naturalHeight: img.naturalHeight,
+              },
               bindingId: assetId,
+              shape: computeTargetShape(),
             },
             "*"
           );
@@ -589,14 +636,14 @@ const AssetOverlay = (() => {
             }
           );
         }
+
         if (msg.type === "LEAVE") {
+          // Verify cursor isn't hovering the pin or menu
+          if (isPinHovered || menuEl) return;
+          isImgHovered = false;
           deactivateSandbox();
-          if (hoverLeaveTimeout) clearTimeout(hoverLeaveTimeout);
-          hoverLeaveTimeout = setTimeout(() => {
-            if (!isPinVisible()) {
-              syncRect();
-            }
-          }, 50);
+          pin.style.display = "none";
+          badge.style.display = "none";
         }
       }
       window.addEventListener("message", onMsg);
@@ -610,44 +657,59 @@ const AssetOverlay = (() => {
       overlayIframe = null;
     }
 
+    function isPointInRect(x, y, r) {
+      return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
+    }
+
     img.addEventListener("pointerenter", () => {
       if (!interactionsEnabled) return;
-      if (hoverLeaveTimeout) {
-        clearTimeout(hoverLeaveTimeout);
-        hoverLeaveTimeout = null;
-      }
       const r = rect();
       if (isTooSmall(r) || offscreen(r)) return;
       isImgHovered = true;
       syncRect();
       activateSandbox();
     });
-    img.addEventListener("pointerleave", () => {
+
+    img.addEventListener("pointerleave", (e) => {
+      // When overlayIframe is mounted, the pointer event moves into the iframe covering the img.
+      // Do not tear down if the iframe is active or if pointer moved into pin.
+      if (overlayIframe) return;
+
+      const toEl = e.relatedTarget;
+      if (toEl && (toEl === pin || pin.contains(toEl))) {
+        return;
+      }
+
       isImgHovered = false;
-      if (hoverLeaveTimeout) clearTimeout(hoverLeaveTimeout);
-      hoverLeaveTimeout = setTimeout(() => {
-        if (!isPinVisible()) {
-          syncRect();
-        }
-      }, 50);
+      if (!isPinHovered && !menuEl) {
+        pin.style.display = "none";
+        badge.style.display = "none";
+      }
     });
+
     pin.addEventListener("pointerenter", () => {
       if (!interactionsEnabled) return;
-      if (hoverLeaveTimeout) {
-        clearTimeout(hoverLeaveTimeout);
-        hoverLeaveTimeout = null;
-      }
       isPinHovered = true;
+      pin.style.display = "flex";
       syncRect();
     });
-    pin.addEventListener("pointerleave", () => {
+
+    pin.addEventListener("pointerleave", (e) => {
       isPinHovered = false;
-      if (hoverLeaveTimeout) clearTimeout(hoverLeaveTimeout);
-      hoverLeaveTimeout = setTimeout(() => {
-        if (!isPinVisible()) {
-          syncRect();
-        }
-      }, 50);
+      const r = rect();
+      const inImg = isPointInRect(e.clientX, e.clientY, r);
+      if (inImg) {
+        // Cursor moved back into image area
+        isImgHovered = true;
+        return;
+      }
+
+      if (!menuEl) {
+        isImgHovered = false;
+        deactivateSandbox();
+        pin.style.display = "none";
+        badge.style.display = "none";
+      }
     });
 
     window.addEventListener("scroll", onScrollOrResize, { passive: true, capture: true });

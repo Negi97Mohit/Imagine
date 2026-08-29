@@ -35,6 +35,98 @@ function firestoreDocUrl(assetId) {
   return `https://firestore.googleapis.com/v1/projects/${FIRESTORE_PROJECT_ID}/databases/(default)/documents/bindings/${assetId}`;
 }
 
+// ---- Task 3: Persistent page-element redesigns ----
+function rtdbRedesignUrl(domain, pushId) {
+  const base = `${RTDB_URL.replace(/\/$/, "")}/redesigns/${encodeURIComponent(domain)}`;
+  return pushId ? `${base}/${encodeURIComponent(pushId)}.json` : `${base}.json`;
+}
+
+async function saveRedesign(domain, entry) {
+  if (!domain || !entry || !entry.selector) return { ok: false, message: "Invalid redesign payload" };
+  const userId = await getAnonUserId();
+  const payload = {
+    selector: entry.selector,
+    styles: entry.styles && typeof entry.styles === "object" ? entry.styles : {},
+    cssText: entry.cssText || "",
+    visibility: entry.visibility === "shared" ? "shared" : "private",
+    name: entry.name || "Untitled redesign",
+    createdBy: userId,
+    createdAt: new Date().toISOString(),
+  };
+  try {
+    const res = await fetch(rtdbRedesignUrl(domain), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      return { ok: true, pushId: data.name, item: { ...payload, pushId: data.name } };
+    }
+  } catch (e) {
+    console.warn("[locked-image] redesign save failed:", e);
+  }
+  return { ok: false };
+}
+
+async function listRedesignsForDomain(domain) {
+  if (!domain) return { ok: true, items: [] };
+  try {
+    const res = await fetch(rtdbRedesignUrl(domain), { cache: "no-store" });
+    if (res.ok) {
+      const data = await res.json();
+      if (data && typeof data === "object") {
+        return { ok: true, items: Object.entries(data).map(([pushId, v]) => ({ ...v, pushId, id: pushId })) };
+      }
+    }
+  } catch (e) {
+    console.warn("[locked-image] redesign list failed:", e);
+  }
+  return { ok: true, items: [] };
+}
+
+async function deleteRedesign(domain, pushId) {
+  if (!domain || !pushId) return { ok: false };
+  try {
+    await fetch(rtdbRedesignUrl(domain, pushId), { method: "DELETE" });
+    return { ok: true };
+  } catch (e) {
+    console.warn("[locked-image] redesign delete failed:", e);
+  }
+  return { ok: false };
+}
+
+async function setRedesignConsent(domain, pushId, decision) {
+  const key = `redesignConsent:${domain}`;
+  const store = await chrome.storage.local.get(key);
+  const existing = store[key] || {};
+  existing[pushId] = decision; // "applied" | "declined" — persisted so we never re-prompt
+  await chrome.storage.local.set({ [key]: existing });
+  return { ok: true };
+}
+
+async function setPendingRedesigns(tabId, domain, items) {
+  if (tabId == null) return;
+  if (chrome.storage.session) {
+    await chrome.storage.session.set({ [`pendingRedesigns:${tabId}`]: { domain, items } });
+  }
+  try {
+    if (items && items.length) {
+      chrome.action.setBadgeText({ text: String(items.length), tabId });
+      chrome.action.setBadgeBackgroundColor({ color: "#b8410e", tabId });
+    } else {
+      chrome.action.setBadgeText({ text: "", tabId });
+    }
+  } catch (e) {}
+}
+
+async function getPendingRedesigns(tabId) {
+  if (tabId == null || !chrome.storage.session) return { domain: null, items: [] };
+  const key = `pendingRedesigns:${tabId}`;
+  const store = await chrome.storage.session.get(key);
+  return store[key] || { domain: null, items: [] };
+}
+
 // ---- Multi-Binding & Fuzzy Perceptual Helpers ----
 let _allBindingsCache = null;
 let _allBindingsCacheTime = 0;
@@ -443,6 +535,44 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
   if (msg.type === "LIST_GLOBAL_INTERACTIONS") {
     listGlobalInteractions().then(sendResponse);
+    return true;
+  }
+  if (msg.type === "SAVE_REDESIGN") {
+    saveRedesign(msg.domain, msg.entry).then(sendResponse);
+    return true;
+  }
+  if (msg.type === "GET_REDESIGNS_FOR_DOMAIN") {
+    listRedesignsForDomain(msg.domain).then(sendResponse);
+    return true;
+  }
+  if (msg.type === "DELETE_REDESIGN") {
+    deleteRedesign(msg.domain, msg.pushId).then(sendResponse);
+    return true;
+  }
+  if (msg.type === "SET_REDESIGN_CONSENT") {
+    setRedesignConsent(msg.domain, msg.pushId, msg.decision).then((res) => {
+      // Once handled, drop it from this tab's pending list / badge.
+      if (sender.tab && sender.tab.id != null) {
+        getPendingRedesigns(sender.tab.id).then(({ domain, items }) => {
+          const remaining = (items || []).filter((it) => it.pushId !== msg.pushId);
+          setPendingRedesigns(sender.tab.id, domain, remaining);
+        });
+      }
+      sendResponse(res);
+    });
+    return true;
+  }
+  if (msg.type === "SET_PENDING_REDESIGNS") {
+    const tabId = sender.tab && sender.tab.id;
+    setPendingRedesigns(tabId, msg.domain, msg.items).then(() => sendResponse({ ok: true }));
+    return true;
+  }
+  if (msg.type === "GET_PENDING_REDESIGNS") {
+    chrome.tabs.query({ active: true, currentWindow: true }, async (tabs) => {
+      const tabId = tabs[0] && tabs[0].id;
+      const res = await getPendingRedesigns(tabId);
+      sendResponse({ ...res, tabId });
+    });
     return true;
   }
 });
