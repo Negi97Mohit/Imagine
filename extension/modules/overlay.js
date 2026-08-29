@@ -530,7 +530,7 @@ const AssetOverlay = (() => {
       }
     });
 
-    // ---- Task 1: Stacking-Context-Aware Overlay Placement & Hole-Punch Clipping ----
+    // ---- Task 1: Stacking-Context-Aware Overlay Placement ----
     function getImageEffectiveZ(targetImg) {
       let node = targetImg;
       while (node && node !== document.documentElement && node !== document.body) {
@@ -552,9 +552,8 @@ const AssetOverlay = (() => {
       const cs = getComputedStyle(img);
       const zIndex = getImageEffectiveZ(img);
       overlayIframe.style.zIndex = String(zIndex);
-      // Inherit original element's clipPath and borderRadius without artificial cut-offs
-      overlayIframe.style.clipPath = cs.clipPath && cs.clipPath !== "none" ? cs.clipPath : "";
       overlayIframe.style.borderRadius = cs.borderRadius || "";
+      overlayIframe.style.clipPath = cs.clipPath && cs.clipPath !== "none" ? cs.clipPath : "";
     }
 
     // ---- Task 2: Loading indicator matching the target's shape ----
@@ -566,9 +565,7 @@ const AssetOverlay = (() => {
         cs.borderBottomRightRadius,
         cs.borderBottomLeftRadius,
       ];
-      const hasRadius = corners.some((c) => parseFloat(c) > 0);
       const clipPath = cs.clipPath && cs.clipPath !== "none" ? cs.clipPath : null;
-      if (!hasRadius && !clipPath) return null;
       return { borderRadius: corners, clipPath };
     }
 
@@ -581,6 +578,7 @@ const AssetOverlay = (() => {
       const cs = getComputedStyle(img);
       const objectFit = cs.objectFit || "fill";
       const objectPosition = cs.objectPosition || "center";
+      const zIndex = getImageEffectiveZ(img);
 
       overlayIframe = document.createElement("iframe");
       overlayIframe.src = chrome.runtime.getURL("sandbox.html");
@@ -588,9 +586,24 @@ const AssetOverlay = (() => {
       overlayIframe.style.cssText =
         `position:fixed;left:${r.left}px;top:${r.top}px;` +
         `width:${r.width}px;height:${r.height}px;` +
-        `border:0;background:transparent;border-radius:${cs.borderRadius};overflow:hidden;`;
-      document.body.appendChild(overlayIframe);
-      recalcOverlayStacking();
+        `border:0;background:transparent;border-radius:${cs.borderRadius};overflow:hidden;` +
+        `z-index:${zIndex};`;
+      if (cs.clipPath && cs.clipPath !== "none") {
+        overlayIframe.style.clipPath = cs.clipPath;
+      }
+
+      // Mount adjacent to img in the same stacking context so foreground elements
+      // (like avatars, edit buttons, badges) paint naturally ON TOP of the canvas
+      // with zero artificial cutouts or gaps for 100% full immersion.
+      try {
+        if (img.parentElement && img.parentElement !== document.body) {
+          img.insertAdjacentElement("afterend", overlayIframe);
+        } else {
+          document.body.appendChild(overlayIframe);
+        }
+      } catch (e) {
+        document.body.appendChild(overlayIframe);
+      }
 
       function onMsg(ev) {
         if (ev.source !== overlayIframe?.contentWindow) return;

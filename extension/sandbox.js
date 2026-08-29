@@ -33,7 +33,9 @@
     const maxR = Math.min(w, h) / 2;
     const r = (corners || []).map((c) => Math.max(0, Math.min(px((c || "0px").split(" ")[0], maxR), maxR)));
     const [tl = 0, tr = 0, br = 0, bl = 0] = r;
-    if (tl + tr + br + bl === 0) return null;
+    if (tl + tr + br + bl === 0) {
+      return `M 0 0 H ${w} V ${h} H 0 Z`;
+    }
     return (
       `M${tl},0 H${w - tr} A${tr},${tr} 0 0 1 ${w},${tr} ` +
       `V${h - br} A${br},${br} 0 0 1 ${w - br},${h} ` +
@@ -111,7 +113,7 @@
     const dash = Math.max(16, length / 5);
     pathEl.setAttribute("stroke-width", "3");
     pathEl.setAttribute("stroke-dasharray", `${dash} ${Math.max(1, length - dash)}`);
-    const speed = length / 1.2; // full perimeter loop in ~1.2s, matching prior bar cadence
+    const speed = length / 1.2; // full perimeter loop in ~1.2s
     let offset = 0;
     let last = performance.now();
     const frame = (now) => {
@@ -136,8 +138,11 @@
       if (shape.clipPath) d = parseClipPathToD(shape.clipPath, canvas.width, canvas.height);
       if (!d && shape.borderRadius) d = roundedRectPath(canvas.width, canvas.height, shape.borderRadius);
     }
+    if (!d) {
+      d = `M 0 0 H ${canvas.width} V ${canvas.height} H 0 Z`;
+    }
 
-    if (d && shapeSvg && shapePath) {
+    if (shapeSvg && shapePath) {
       shapeSvg.setAttribute("viewBox", `0 0 ${canvas.width} ${canvas.height}`);
       shapePath.setAttribute("d", d);
       shapeSvg.style.display = "block";
@@ -146,10 +151,6 @@
       let length = 0;
       try { length = shapePath.getTotalLength(); } catch (e) { length = 2 * (canvas.width + canvas.height); }
       startShapeAnimation(shapePath, length || 1);
-    } else {
-      // No usable shape info (plain rectangle) -> degrade to the original bar.
-      if (shapeSvg) { shapeSvg.style.display = "none"; shapeSvg.classList.add("hidden"); }
-      if (loadingBar) { loadingBar.style.display = ""; loadingBar.classList.remove("hidden"); }
     }
   }
 
@@ -157,8 +158,8 @@
     cancelShapeAnimation();
     const loadingBar = document.getElementById("loading-bar");
     const shapeSvg = document.getElementById("loading-shape");
-    if (loadingBar) loadingBar.classList.add("hidden");
-    if (shapeSvg) shapeSvg.classList.add("hidden");
+    if (loadingBar) { loadingBar.classList.add("hidden"); loadingBar.style.display = "none"; }
+    if (shapeSvg) { shapeSvg.classList.add("hidden"); shapeSvg.style.display = "none"; }
   }
 
   function resizeTo(w, h) {
