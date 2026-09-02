@@ -21,6 +21,59 @@ const editorBindingsList = document.getElementById("editorBindingsList");
 const previewRawImg = document.getElementById("previewRawImg");
 const pausePreviewBtn = document.getElementById("pausePreview");
 const previewFootHint = document.getElementById("previewFootHint");
+const templatePresetSelect = document.getElementById("templatePresetSelect");
+const editorMediaUpload = document.getElementById("editorMediaUpload");
+const editorUploadBtn = document.getElementById("editorUploadBtn");
+
+if (editorUploadBtn && editorMediaUpload) {
+  editorUploadBtn.addEventListener("click", () => editorMediaUpload.click());
+  editorMediaUpload.addEventListener("change", (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+    setStatus(`Reading ${file.name}…`);
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      const dataUrl = evt.target.result;
+      const mediaIt = typeof createMediaInteraction === "function"
+        ? createMediaInteraction({
+            name: file.name,
+            fileDataUrl: dataUrl,
+            fileName: file.name,
+            mimeType: file.type
+          })
+        : null;
+
+      if (mediaIt) {
+        nameInput.value = mediaIt.name;
+        htmlCode.value = mediaIt.html;
+        cssCode.value = mediaIt.css;
+        jsCode.value = mediaIt.js;
+      }
+      setStatus(`Loaded attachment "${file.name}"`);
+      scheduleLivePreview();
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+if (templatePresetSelect) {
+  templatePresetSelect.addEventListener("change", () => {
+    const val = templatePresetSelect.value;
+    let tmpl = typeof STARTER_TEMPLATE !== "undefined" ? STARTER_TEMPLATE : { html: "", css: "", js: "" };
+    if (typeof MEDIA_TEMPLATES !== "undefined") {
+      if (val === "video") tmpl = MEDIA_TEMPLATES.VIDEO;
+      else if (val === "document") tmpl = MEDIA_TEMPLATES.DOCUMENT;
+      else if (val === "image_gif") tmpl = MEDIA_TEMPLATES.IMAGE_GIF;
+    }
+    if (confirm(`Switch to "${tmpl.name}" preset? Any unsaved code in the editor will be replaced.`)) {
+      nameInput.value = tmpl.name;
+      htmlCode.value = tmpl.html || "";
+      cssCode.value = tmpl.css || "";
+      jsCode.value = tmpl.js || "";
+      scheduleLivePreview();
+    }
+  });
+}
 
 const params = new URLSearchParams(location.search);
 let editingLocalId = params.get("localId");
@@ -383,7 +436,7 @@ publishBtn.addEventListener("click", () => {
     setStatus(
       res && res.ok
         ? `Published "${interaction.name}" — anyone with this extension can now find it in the global gallery.`
-        : "Failed to publish — check FIREBASE_PROJECT_ID in background.js and your Firestore rules."
+        : "Failed to publish interaction — check your network connection."
     );
   });
 });

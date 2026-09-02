@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Open Sesame",
-  "version": "1.0",
-  "description": "A shared interactive layer over images anywhere on the web \u2014 recognized by what they look like, not by URL.",
+  "version": "1.0.1",
+  "description": "A shared interactive layer over the images anywhere on the web \u2014 recognized by what they look like, not by URL.",
   "icons": {
     "16": "icon16.png",
     "32": "icon32.png",
@@ -12,6 +12,7 @@
   "permissions": ["storage"],
   "host_permissions": [
     "https://*.firebaseio.com/*",
+    "https://firestore.googleapis.com/*",
     "https://*/*",
     "http://*/*"
   ],
@@ -48,10 +49,7 @@
   },
   "web_accessible_resources": [
     {
-      "resources": [
-        "sandbox.html",
-        "modules/redesign-presets.json"
-      ],
+      "resources": ["sandbox.html", "modules/redesign-presets.json"],
       "matches": ["<all_urls>"]
     }
   ],

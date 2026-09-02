@@ -536,9 +536,28 @@
 
     <div class="editor-content-wrap">
       <section class="editor-col">
-        <div class="field">
-          <label>Name</label>
-          <input type="text" id="name" placeholder="e.g. Glitch Reveal">
+        <div style="display:grid;grid-template-columns:1fr auto;gap:8px;align-items:end;">
+          <div class="field" style="margin:0;">
+            <label>Name</label>
+            <input type="text" id="name" placeholder="e.g. Glitch Reveal">
+          </div>
+          <div class="field" style="margin:0;">
+            <label>Template Preset</label>
+            <select id="templatePresetSelect" style="padding:7px 9px;border:1px solid var(--rule);background:var(--paper);color:var(--ink);font-size:11.5px;font-family:inherit;outline:none;cursor:pointer;">
+              <option value="starter">Custom JS Canvas</option>
+              <option value="video">Video / Reel Overlay</option>
+              <option value="document">PDF & Document Showcase</option>
+              <option value="image_gif">Image & Animated GIF Overlay</option>
+            </select>
+          </div>
+        </div>
+
+        <div style="padding:10px 12px;background:var(--code-bg);border:1px dashed var(--hair);border-radius:4px;display:flex;align-items:center;justify-content:space-between;gap:8px;">
+          <div style="font-size:11px;color:var(--ink);">
+            <strong style="color:var(--accent);">📎 Attach Media:</strong> Upload PDF, Doc, Video, GIF, or Image
+          </div>
+          <input type="file" id="editorMediaUpload" accept=".pdf,.doc,.docx,.txt,.md,.mp4,.webm,.gif,.png,.jpg,.jpeg,.webp" style="display:none;">
+          <button id="editorUploadBtn" type="button" style="background:var(--tag-bg);color:var(--tag-fg);border:none;padding:5px 10px;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.08em;cursor:pointer;">Choose File</button>
         </div>
 
         <details class="hint">

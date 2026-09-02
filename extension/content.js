@@ -202,8 +202,8 @@
     }
   }
 
-  // Fast live sync (every 2.5s) for visible images across open tabs & profiles
-  setInterval(syncActiveOverlays, 2500);
+  // Live sync for visible images across open tabs & profiles (complements real-time message push)
+  setInterval(syncActiveOverlays, 6000);
   window.addEventListener("focus", syncActiveOverlays);
   document.addEventListener("visibilitychange", () => {
     if (!document.hidden) syncActiveOverlays();

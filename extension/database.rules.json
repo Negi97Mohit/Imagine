@@ -1,4 +1,4 @@
-﻿{
+{
   "rules": {
     "bindings": {
       ".read": true,
@@ -23,6 +23,13 @@
         "$pushId": {
           ".validate": "newData.hasChildren(['selector', 'visibility', 'createdBy', 'createdAt']) && newData.child('selector').isString() && newData.child('visibility').isString() && newData.child('createdBy').isString() && newData.child('createdAt').isString()"
         }
+      }
+    },
+    "redesign_presets": {
+      ".read": true,
+      "$presetId": {
+        ".write": true,
+        ".validate": "newData.hasChildren(['name', 'createdBy', 'createdAt']) && newData.child('name').isString() && newData.child('createdBy').isString() && newData.child('createdAt').isString()"
       }
     }
   }

@@ -1,7 +1,7 @@
 // ---- Task 3 & Redesign Studio Engine ----
 // Lets a user select any DOM element on the page (or body) and apply persistent
-// custom visual restyling (CSS properties, custom CSS, custom HTML, and custom JS).
-// Features: Live preview as you type, direct saving (no reload needed), and individual toggles.
+// custom visual restyling (CSS properties, custom CSS, custom HTML, and native engines).
+// Features: Live preview as you type, direct saving (no reload needed), community sharing, and individual toggles.
 
 const RedesignMode = (() => {
   const APPLIED_STYLE_PREFIX = "open-sesame-redesign-style-";
@@ -13,7 +13,7 @@ const RedesignMode = (() => {
   // In-memory list of active redesign entries on this page
   let activeRedesignEntries = [];
 
-  // Background Passthrough Helper for Deep Container Transparency
+  // Safe background passthrough: only when body/html is explicitly targeted with an engine
   const BG_PASSTHROUGH_ID = "open-sesame-bg-passthrough";
   function updateBgPassthrough(isNeeded) {
     let tag = document.getElementById(BG_PASSTHROUGH_ID);
@@ -28,23 +28,20 @@ const RedesignMode = (() => {
           background-color: transparent !important;
           background-image: none !important;
         }
-        body > div:not(#open-sesame-redesign-editor):not([id^="open-sesame"]):not([id^="imagine-"]),
-        body > main:not(#open-sesame-redesign-editor),
-        body > section:not(#open-sesame-redesign-editor),
-        #main, #cnt, #rcnt, #center_col, .GyAeWb, .app-container,
-        ytd-app, #content, #page-manager, ytd-browse, ytd-search,
-        .application-outlet, .scaffold-layout, .authentication-outlet,
-        #app, #root, #root > div:not(#open-sesame-redesign-editor),
-        #__next, #__next > div:not(#open-sesame-redesign-editor),
-        [class*="layout"]:not(#open-sesame-redesign-editor):not(#open-sesame-redesign-editor *),
-        [class*="wrapper"]:not(#open-sesame-redesign-editor):not(#open-sesame-redesign-editor *),
-        [class*="container"]:not(#open-sesame-redesign-editor):not(#open-sesame-redesign-editor *) {
-          background-color: transparent !important;
-        }
       `;
     } else if (tag) {
       tag.remove();
     }
+  }
+
+  function sanitizeCss(cssText) {
+    if (!cssText || typeof cssText !== "string") return "";
+    return cssText
+      .replace(/<[^>]*>/g, "")
+      .replace(/javascript:/gi, "")
+      .replace(/expression\s*\(/gi, "")
+      .replace(/behavior\s*:/gi, "")
+      .replace(/@-moz-binding/gi, "");
   }
 
   function buildSafeSelector(rawSel) {
@@ -773,11 +770,14 @@ const RedesignMode = (() => {
           </div>
         </div>
 
-        <div style="display:flex;gap:8px;border-top:1px solid ${t.border};padding-top:10px;margin-top:2px;">
-          <button id="os-rd-save" type="button" style="flex:1.4;background:${t.primaryBtnBg};color:${t.primaryBtnText};border:0;padding:8px 12px;border-radius:7px;cursor:pointer;font-weight:700;font-size:11.5px;letter-spacing:0.02em;transition:all 0.15s ease;">
+        <div style="display:flex;gap:6px;border-top:1px solid ${t.border};padding-top:10px;margin-top:2px;">
+          <button id="os-rd-save" type="button" title="Apply to this element and save locally" style="flex:1.2;background:${t.primaryBtnBg};color:${t.primaryBtnText};border:0;padding:8px 10px;border-radius:7px;cursor:pointer;font-weight:700;font-size:11px;letter-spacing:0.02em;transition:all 0.15s ease;">
             ✓ Apply & Save
           </button>
-          <button id="os-rd-cancel" type="button" style="flex:1;background:${t.secondaryBtnBg};color:${t.secondaryBtnText};border:0;padding:8px 10px;border-radius:7px;cursor:pointer;font-size:11.5px;font-weight:500;transition:all 0.15s ease;">
+          <button id="os-rd-publish-community" type="button" title="Publish this preset to Firestore so other extension users can discover and apply it" style="flex:1.4;background:#b8410e;color:#ffffff;border:0;padding:8px 10px;border-radius:7px;cursor:pointer;font-weight:700;font-size:11px;letter-spacing:0.02em;transition:all 0.15s ease;">
+            🌐 Share Community
+          </button>
+          <button id="os-rd-cancel" type="button" style="flex:0.8;background:${t.secondaryBtnBg};color:${t.secondaryBtnText};border:0;padding:8px 8px;border-radius:7px;cursor:pointer;font-size:11px;font-weight:500;transition:all 0.15s ease;">
             Cancel
           </button>
         </div>
@@ -840,33 +840,69 @@ const RedesignMode = (() => {
         setTimeout(scrollToActivePreset, 40);
       });
 
-      let cachedLoadedPresets = null;
-      async function loadPresetsFromJSON() {
-        if (Array.isArray(cachedLoadedPresets) && cachedLoadedPresets.length > 0) {
-          return cachedLoadedPresets;
+      let cachedAllPresets = null;
+      let cachedPresetsTime = 0;
+
+      async function loadAllPresets() {
+        const now = Date.now();
+        if (Array.isArray(cachedAllPresets) && cachedAllPresets.length > 0 && now - cachedPresetsTime < 8000) {
+          return cachedAllPresets;
         }
+
+        // 1. Built-in Seed Presets from Local JSON
+        let seedPresets = [];
         try {
           const url = chrome.runtime.getURL("modules/redesign-presets.json");
           const res = await fetch(url);
           if (res.ok) {
-            cachedLoadedPresets = await res.json();
-            return cachedLoadedPresets;
+            seedPresets = (await res.json()) || [];
           }
         } catch (e) {}
-        return (typeof REDESIGN_PRESETS !== "undefined" ? REDESIGN_PRESETS : null) ||
-               (typeof window !== "undefined" && window.REDESIGN_PRESETS) ||
-               (typeof globalThis !== "undefined" && globalThis.REDESIGN_PRESETS) || [];
+
+        if (!seedPresets.length) {
+          seedPresets = (typeof REDESIGN_PRESETS !== "undefined" ? REDESIGN_PRESETS : null) ||
+                        (typeof window !== "undefined" && window.REDESIGN_PRESETS) || [];
+        }
+
+        // 2. Fetch Community Presets from Firestore via Background Service Worker
+        let communityPresets = [];
+        try {
+          const res = await new Promise((resolve) => {
+            chrome.runtime.sendMessage({ type: "LIST_COMMUNITY_PRESETS" }, (r) => resolve(r));
+          });
+          if (res && res.ok && Array.isArray(res.items)) {
+            communityPresets = res.items;
+          }
+        } catch (e) {}
+
+        // 3. Merge idempotently without duplicates
+        const presetMap = new Map();
+        seedPresets.forEach((p) => {
+          if (p && p.id) {
+            presetMap.set(p.id, { ...p, isBuiltIn: true });
+          }
+        });
+        communityPresets.forEach((p) => {
+          if (p && p.id) {
+            presetMap.set(p.id, { ...p, isCommunity: true });
+          }
+        });
+
+        cachedAllPresets = Array.from(presetMap.values());
+        cachedPresetsTime = now;
+        return cachedAllPresets;
       }
 
       async function renderPresetsList() {
         const listContainer = panel.querySelector("#os-rd-presets-list");
         if (!listContainer) return;
-        const allPresets = await loadPresetsFromJSON();
+        listContainer.innerHTML = `<div style="padding:14px;text-align:center;color:${t.subtext};font-size:10.5px;">Loading presets & community creations…</div>`;
+        const allPresets = await loadAllPresets();
         const selectedCat = catFilter ? catFilter.value : "all";
         const selectedTheme = themeFilter ? themeFilter.value : "all";
 
         const filtered = allPresets.filter((p) => {
-          const matchCat = selectedCat === "all" || p.category === selectedCat;
+          const matchCat = selectedCat === "all" || p.category === selectedCat || (selectedCat === "community" && p.isCommunity);
           const matchTheme = selectedTheme === "all" || (p.theme && p.theme.toLowerCase().includes(selectedTheme.toLowerCase()));
           return matchCat && matchTheme;
         });
@@ -896,19 +932,26 @@ const RedesignMode = (() => {
             `background:${activeBg};border:1.5px solid ${activeBorder};border-radius:8px;padding:8px 10px;` +
             `cursor:pointer;display:flex;flex-direction:column;gap:4px;transition:all 0.15s ease;box-shadow:${activeShadow};`;
 
+          const communityTag = p.isCommunity
+            ? `<span style="font-size:8px;padding:1px 4px;border-radius:3px;background:rgba(184,65,14,0.18);color:#b8410e;font-weight:700;">🌐 Community</span>`
+            : "";
+
           item.innerHTML = `
             <div style="display:flex;align-items:center;justify-content:space-between;gap:6px;">
               <div style="font-weight:700;font-size:11px;color:${isSelected ? "#6366f1" : t.text};display:flex;align-items:center;gap:4px;">
                 ${isSelected ? "✓ " : ""}${p.name}
               </div>
-              <span style="font-size:8.5px;padding:2px 5px;border-radius:4px;background:rgba(99,102,241,0.15);color:#6366f1;font-weight:600;white-space:nowrap;">${p.theme.split('/')[0].trim()}</span>
+              <div style="display:flex;align-items:center;gap:4px;">
+                ${communityTag}
+                <span style="font-size:8.5px;padding:2px 5px;border-radius:4px;background:rgba(99,102,241,0.15);color:#6366f1;font-weight:600;white-space:nowrap;">${(p.theme || "Preset").split('/')[0].trim()}</span>
+              </div>
             </div>
-            <div style="font-size:9.5px;color:${t.subtext};line-height:1.3;">${p.description}</div>
+            <div style="font-size:9.5px;color:${t.subtext};line-height:1.3;">${p.description || "Interactive preset restyling"}</div>
             <div style="display:flex;align-items:center;justify-content:space-between;margin-top:4px;">
               <div style="display:flex;align-items:center;gap:4px;">
                 <span style="width:12px;height:12px;border-radius:3px;background:${bgPreview};border:${borderPreview};" title="Background preview"></span>
                 <span style="width:12px;height:12px;border-radius:50%;background:${colorPreview};border:1px solid rgba(0,0,0,0.1);" title="Text color"></span>
-                <span style="font-size:9px;color:${t.subtext};text-transform:capitalize;">${p.category}</span>
+                <span style="font-size:9px;color:${t.subtext};text-transform:capitalize;">${p.category || "custom"}</span>
               </div>
               <button type="button" style="background:${isSelected ? "#6366f1" : t.primaryBtnBg};color:#ffffff;border:0;border-radius:4px;padding:3px 8px;font-size:9.5px;font-weight:700;cursor:pointer;">
                 ${isSelected ? "✓ Previewing" : "Preview"}
@@ -1128,8 +1171,11 @@ const RedesignMode = (() => {
       panel.querySelector("#os-rd-close").addEventListener("click", closeAndRevert);
       panel.querySelector("#os-rd-cancel").addEventListener("click", closeAndRevert);
 
-      // Save
-      panel.querySelector("#os-rd-save").addEventListener("click", handleSave);
+      // Save Local
+      panel.querySelector("#os-rd-save").addEventListener("click", () => handleSave(false));
+
+      // Publish / Share to Community Firestore
+      panel.querySelector("#os-rd-publish-community")?.addEventListener("click", () => handleSave(true));
     }
 
     function updateLivePreview() {
@@ -1149,7 +1195,7 @@ const RedesignMode = (() => {
       styles.borderRadius = borderRadius;
       styles.boxShadow = shadow;
 
-      applyLivePreview(el, { styles, cssText, html, js, engineId: currentEngineId });
+      applyLivePreview(el, { styles, cssText: sanitizeCss(cssText), html, js, engineId: currentEngineId });
     }
 
     function closeAndRevert() {
@@ -1160,11 +1206,13 @@ const RedesignMode = (() => {
       panel.remove();
     }
 
-    async function handleSave() {
+    async function handleSave(publishToCommunity = false) {
       const saveBtn = panel.querySelector("#os-rd-save");
-      if (saveBtn) {
-        saveBtn.disabled = true;
-        saveBtn.textContent = "Saving…";
+      const publishBtn = panel.querySelector("#os-rd-publish-community");
+      if (saveBtn) saveBtn.disabled = true;
+      if (publishBtn) {
+        publishBtn.disabled = true;
+        publishBtn.textContent = publishToCommunity ? "Publishing…" : "Saving…";
       }
 
       const name = panel.querySelector("#os-rd-name")?.value.trim() || `${tagName} redesign`;
@@ -1173,7 +1221,7 @@ const RedesignMode = (() => {
       const border = panel.querySelector("#os-rd-border")?.value.trim() || "";
       const borderRadius = panel.querySelector("#os-rd-radius")?.value.trim() || "";
       const shadow = panel.querySelector("#os-rd-shadow")?.value.trim() || "";
-      const cssText = panel.querySelector("#os-rd-css")?.value.trim() || "";
+      const cssText = sanitizeCss(panel.querySelector("#os-rd-css")?.value.trim() || "");
       const html = panel.querySelector("#os-rd-html")?.value || "";
       const js = panel.querySelector("#os-rd-js")?.value || "";
 
@@ -1205,6 +1253,7 @@ const RedesignMode = (() => {
       applyRedesignEntry(entry);
       await saveRedesignLocally(entry);
 
+      // Save domain redesign
       chrome.runtime.sendMessage(
         { type: "SAVE_REDESIGN", domain: getDomainKey(), entry },
         (res) => {
@@ -1216,6 +1265,22 @@ const RedesignMode = (() => {
           }
         }
       );
+
+      // If user chose to publish as a Community Preset in Firestore
+      if (publishToCommunity) {
+        const presetPayload = {
+          id: "community_" + pushId,
+          name,
+          category: tagName === "body" || tagName === "html" ? "background" : tagName,
+          theme: "Community / Custom",
+          description: `Custom ${tagName} redesign created on ${getDomainKey()}`,
+          engineId: currentEngineId || null,
+          styles,
+          cssText,
+          scope: isGlobalScope ? "global" : "page",
+        };
+        chrome.runtime.sendMessage({ type: "SAVE_COMMUNITY_PRESET", preset: presetPayload });
+      }
 
       panel.remove();
     }
@@ -1292,23 +1357,23 @@ const RedesignMode = (() => {
         if (activeRedesignEntries.length) {
           activeRedesignEntries.forEach((entry) => {
             if (entry.enabled !== false) {
-              const targets = safeQueryAll(entry.selector);
-              targets.forEach((el) => {
-                if (entry.styles && typeof entry.styles === "object") {
-                  for (const [prop, val] of Object.entries(entry.styles)) {
-                    if (val !== undefined && val !== null && val !== "") {
-                      try {
-                        const kebab = camelToKebab(prop);
-                        el.style.setProperty(kebab, val, "important");
-                      } catch (e) {}
-                    }
+              const styleId = APPLIED_STYLE_PREFIX + (entry.pushId || entry.id || "temp");
+              // If style tag was wiped by SPA navigation, re-apply
+              if (!document.getElementById(styleId)) {
+                applyRedesignEntry(entry);
+              } else if (entry.engineId && typeof InteractiveBackgrounds !== "undefined") {
+                // Ensure native background canvas stays attached if React/Vue replaced the DOM node
+                const targets = safeQueryAll(entry.selector);
+                targets.forEach((el) => {
+                  if (!el.querySelector(".imagine-interactive-canvas, .imagine-webgl-canvas")) {
+                    InteractiveBackgrounds.mount(el, entry.engineId);
                   }
-                }
-              });
+                });
+              }
             }
           });
         }
-      }, 80);
+      }, 250);
     });
 
     observer.observe(document.documentElement, {

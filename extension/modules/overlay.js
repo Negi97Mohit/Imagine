@@ -168,6 +168,45 @@ const AssetOverlay = (() => {
       menuEl.style.maxHeight = menuHeight + "px";
     }
 
+    function getFixedContainingBlock(node) {
+      let curr = node ? node.parentElement : null;
+      while (curr && curr !== document.documentElement && curr !== document.body) {
+        const cs = getComputedStyle(curr);
+        if (
+          (cs.transform && cs.transform !== "none") ||
+          (cs.filter && cs.filter !== "none") ||
+          (cs.perspective && cs.perspective !== "none") ||
+          (cs.backdropFilter && cs.backdropFilter !== "none") ||
+          (cs.willChange && (cs.willChange.includes("transform") || cs.willChange.includes("perspective") || cs.willChange.includes("filter"))) ||
+          (cs.contain && (cs.contain.includes("paint") || cs.contain.includes("strict") || cs.contain.includes("layout") || cs.contain.includes("content")))
+        ) {
+          return curr;
+        }
+        curr = curr.parentElement;
+      }
+      return null;
+    }
+
+    function computeOverlayPosition(r) {
+      if (!overlayIframe) return { left: r.left, top: r.top, width: r.width, height: r.height };
+      const cb = getFixedContainingBlock(overlayIframe);
+      if (cb) {
+        const cbRect = cb.getBoundingClientRect();
+        return {
+          left: r.left - cbRect.left,
+          top: r.top - cbRect.top,
+          width: r.width,
+          height: r.height,
+        };
+      }
+      return {
+        left: r.left,
+        top: r.top,
+        width: r.width,
+        height: r.height,
+      };
+    }
+
     function syncRect() {
       if (destroyed) return;
       const r = rect();
@@ -216,10 +255,11 @@ const AssetOverlay = (() => {
       }
 
       if (overlayIframe) {
-        overlayIframe.style.left = r.left + "px";
-        overlayIframe.style.top = r.top + "px";
-        overlayIframe.style.width = r.width + "px";
-        overlayIframe.style.height = r.height + "px";
+        const pos = computeOverlayPosition(r);
+        overlayIframe.style.left = pos.left + "px";
+        overlayIframe.style.top = pos.top + "px";
+        overlayIframe.style.width = pos.width + "px";
+        overlayIframe.style.height = pos.height + "px";
         recalcOverlayStacking();
       }
 
@@ -420,10 +460,69 @@ const AssetOverlay = (() => {
         }
       };
 
+      // ---- Section: Quick Media Attachment (PDF, Video, GIF, Doc, Image) ----
+      const mediaSection = makeEl("div", "margin-bottom:12px;padding:10px;background:#f8fafc;border:1px dashed #cbd5e1;border-radius:8px;text-align:center;");
+      const mediaTitle = makeEl("div", "font-weight:700;font-size:10.5px;color:#334155;margin-bottom:4px;display:flex;align-items:center;justify-content:center;gap:4px;");
+      mediaTitle.innerHTML = `📎 <span>Attach Media / Document</span>`;
+      mediaSection.appendChild(mediaTitle);
+
+      const mediaDesc = makeEl("div", "font-size:9.5px;color:#64748b;margin-bottom:8px;");
+      mediaDesc.textContent = "Upload PDF, Video, GIF, Image, or Doc to this image";
+      mediaSection.appendChild(mediaDesc);
+
+      const fileInput = makeEl("input", "display:none;");
+      fileInput.type = "file";
+      fileInput.accept = ".pdf,.doc,.docx,.txt,.md,.mp4,.webm,.gif,.png,.jpg,.jpeg,.webp";
+
+      const uploadBtn = makeEl("button", "width:100%;padding:6px 10px;background:#b8410e;color:#fff;border:none;border-radius:6px;font-size:10.5px;font-weight:600;cursor:pointer;transition:all 0.15s ease;display:flex;align-items:center;justify-content:center;gap:6px;");
+      uploadBtn.innerHTML = `<span>+ Choose File to Attach</span>`;
+      uploadBtn.onclick = (e) => {
+        e.stopPropagation();
+        fileInput.click();
+      };
+
+      fileInput.onchange = async (e) => {
+        const file = e.target.files && e.target.files[0];
+        if (!file) return;
+        uploadBtn.disabled = true;
+        uploadBtn.innerHTML = `<span>Uploading ${file.name.slice(0, 15)}...</span>`;
+
+        try {
+          const reader = new FileReader();
+          reader.onload = async (evt) => {
+            const dataUrl = evt.target.result;
+            const interaction = typeof createMediaInteraction === "function"
+              ? createMediaInteraction({
+                  name: file.name,
+                  fileDataUrl: dataUrl,
+                  fileName: file.name,
+                  mimeType: file.type
+                })
+              : {
+                  name: file.name,
+                  html: `<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.7);color:#fff;"><a href="${dataUrl}" target="_blank" style="color:#fff;font-size:14px;font-weight:bold;">📄 View ${file.name}</a></div>`,
+                  css: "",
+                  js: "function run(){ return { resize(){}, destroy(){} }; }"
+                };
+
+            await handleSelectInteraction(interaction);
+          };
+          reader.readAsDataURL(file);
+        } catch (err) {
+          uploadBtn.disabled = false;
+          uploadBtn.innerHTML = `<span>+ Choose File to Attach</span>`;
+          alert("Failed to read file: " + err.message);
+        }
+      };
+
+      mediaSection.appendChild(fileInput);
+      mediaSection.appendChild(uploadBtn);
+      menuEl.appendChild(mediaSection);
+
       // ---- Section: Add / Change Interaction ----
       const userHasBinding = myUserId && allBindings.some((b) => b.createdBy === myUserId);
       const addTitle = makeEl("div", "font-weight:700;font-size:10px;margin-bottom:6px;text-transform:uppercase;letter-spacing:0.06em;color:#71717a;");
-      addTitle.textContent = userHasBinding ? "Change Interaction" : "Choose Interaction";
+      addTitle.textContent = userHasBinding ? "Change Interaction" : "Preset & Gallery Interactions";
       menuEl.appendChild(addTitle);
 
       const listDiv = makeEl("div", "display:flex;flex-direction:column;gap:4px;");
@@ -437,6 +536,14 @@ const AssetOverlay = (() => {
           templates = res.items;
         }
       } catch (e) {}
+
+      if (typeof GLOBAL_TEMPLATES !== "undefined" && Array.isArray(GLOBAL_TEMPLATES)) {
+        GLOBAL_TEMPLATES.forEach((gt) => {
+          if (gt && gt.name && !templates.some((t) => (t.name || "").toLowerCase() === gt.name.toLowerCase())) {
+            templates.unshift(gt);
+          }
+        });
+      }
 
       if (templates.length) {
         templates.forEach((t) => {
@@ -587,7 +694,7 @@ const AssetOverlay = (() => {
         `position:fixed;left:${r.left}px;top:${r.top}px;` +
         `width:${r.width}px;height:${r.height}px;` +
         `border:0;background:transparent;border-radius:${cs.borderRadius};overflow:hidden;` +
-        `z-index:${zIndex};`;
+        `pointer-events:auto;z-index:${zIndex};`;
       if (cs.clipPath && cs.clipPath !== "none") {
         overlayIframe.style.clipPath = cs.clipPath;
       }
@@ -604,6 +711,10 @@ const AssetOverlay = (() => {
       } catch (e) {
         document.body.appendChild(overlayIframe);
       }
+
+      const pos = computeOverlayPosition(r);
+      overlayIframe.style.left = pos.left + "px";
+      overlayIframe.style.top = pos.top + "px";
 
       function onMsg(ev) {
         if (ev.source !== overlayIframe?.contentWindow) return;
@@ -728,6 +839,15 @@ const AssetOverlay = (() => {
     window.addEventListener("scroll", onScrollOrResize, { passive: true, capture: true });
     document.addEventListener("scroll", onScrollOrResize, { passive: true, capture: true });
     window.addEventListener("resize", onScrollOrResize, { passive: true });
+
+    let resizeObserver = null;
+    try {
+      resizeObserver = new ResizeObserver(() => {
+        syncRect();
+      });
+      resizeObserver.observe(img);
+    } catch (e) {}
+
     syncRect();
 
     return {
@@ -798,6 +918,9 @@ const AssetOverlay = (() => {
       destroy() {
         destroyed = true;
         if (hoverLeaveTimeout) clearTimeout(hoverLeaveTimeout);
+        if (resizeObserver) {
+          try { resizeObserver.disconnect(); } catch (e) {}
+        }
         deactivateSandbox();
         closeMenu();
         window.removeEventListener("keydown", onKeyDown);

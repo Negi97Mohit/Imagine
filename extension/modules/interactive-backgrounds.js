@@ -6,8 +6,40 @@
 
 const InteractiveBackgrounds = (() => {
   const activeMounts = new WeakMap();
+  const originalStylesMap = new WeakMap();
+
+  // Shared Global Pointer Tracker to avoid duplicate capture listeners on window
+  const GlobalPointer = (() => {
+    let clientX = -9999;
+    let clientY = -9999;
+    let isTracking = false;
+
+    function onPointer(e) {
+      clientX = e.clientX;
+      clientY = e.clientY;
+    }
+    function onTouch(e) {
+      if (e.touches && e.touches[0]) {
+        clientX = e.touches[0].clientX;
+        clientY = e.touches[0].clientY;
+      }
+    }
+
+    return {
+      getCoords() {
+        return { clientX, clientY };
+      },
+      start() {
+        if (isTracking || typeof window === "undefined") return;
+        isTracking = true;
+        window.addEventListener("pointermove", onPointer, { passive: true });
+        window.addEventListener("touchmove", onTouch, { passive: true });
+      },
+    };
+  })();
 
   function prepareTarget(el) {
+    if (!el) return { canvas: document.createElement("canvas"), isFullPage: false };
     const isFullPage = (el === document.body || el === document.documentElement || el.tagName.toLowerCase() === "main" || el.id === "rcnt");
 
     // Clean up any old interactive background canvases on this element or globally
@@ -17,6 +49,15 @@ const InteractiveBackgrounds = (() => {
       el.querySelectorAll(":scope > .imagine-interactive-canvas, :scope > .imagine-webgl-canvas, :scope > .imagine-interactive-stamp").forEach(c => c.remove());
     }
 
+    // Save original styles if not already saved
+    if (!originalStylesMap.has(el)) {
+      originalStylesMap.set(el, {
+        position: el.style.position || "",
+        isolation: el.style.isolation || "",
+        zIndex: el.style.zIndex || "",
+      });
+    }
+
     const canvas = document.createElement("canvas");
     canvas.className = isFullPage ? "imagine-interactive-canvas imagine-interactive-canvas-global" : "imagine-interactive-canvas";
 
@@ -24,57 +65,53 @@ const InteractiveBackgrounds = (() => {
       canvas.id = "imagine-interactive-canvas-global";
       canvas.style.cssText = "position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:-1;pointer-events:none;display:block;";
       document.body.prepend(canvas);
-      document.documentElement.style.setProperty("background-color", "transparent", "important");
-      document.body.style.setProperty("background-color", "transparent", "important");
     } else {
       const compPos = window.getComputedStyle(el).position;
-      if (compPos === "static") el.style.position = "relative";
-      el.style.overflow = "hidden";
-      canvas.style.cssText = "position:absolute;top:0;left:0;width:100%;height:100%;z-index:0;pointer-events:none;display:block;border-radius:inherit;";
-      el.prepend(canvas);
+      if (compPos === "static") {
+        el.style.position = "relative";
+      }
+      // Create isolated stacking context so z-index: -1 canvas sits behind child content without breaking layout
+      el.style.isolation = "isolate";
 
-      Array.from(el.children).forEach(child => {
-        if (!child.classList.contains("imagine-interactive-canvas") && !child.classList.contains("imagine-webgl-canvas") && !child.classList.contains("imagine-interactive-stamp")) {
-          if (window.getComputedStyle(child).position === "static") child.style.position = "relative";
-          if (!child.style.zIndex || parseInt(child.style.zIndex, 10) < 1) child.style.zIndex = "1";
-        }
-      });
+      // Non-destructive: canvas is positioned behind all children with z-index: -1 and pointer-events: none
+      // Never overwrite el.style.overflow or mutate children elements' styles!
+      canvas.style.cssText = "position:absolute;inset:0;width:100%;height:100%;z-index:-1;pointer-events:none;display:block;border-radius:inherit;";
+      el.prepend(canvas);
     }
 
     return { canvas, isFullPage };
   }
 
   function setupMouseTracking(el, isFullPage) {
-    const mouse = { x: -9999, y: -9999, isInside: false };
-
-    function updateMouse(clientX, clientY) {
-      if (isFullPage) {
-        mouse.x = clientX;
-        mouse.y = clientY;
-        mouse.isInside = true;
-      } else {
+    GlobalPointer.start();
+    const mouse = {
+      get x() {
+        const { clientX } = GlobalPointer.getCoords();
+        if (isFullPage) return clientX;
+        if (!el || !el.isConnected) return -9999;
         const rect = el.getBoundingClientRect();
-        mouse.x = clientX - rect.left;
-        mouse.y = clientY - rect.top;
-        mouse.isInside = (mouse.x >= -20 && mouse.x <= rect.width + 20 && mouse.y >= -20 && mouse.y <= rect.height + 20);
+        return clientX - rect.left;
+      },
+      get y() {
+        const { clientY } = GlobalPointer.getCoords();
+        if (isFullPage) return clientY;
+        if (!el || !el.isConnected) return -9999;
+        const rect = el.getBoundingClientRect();
+        return clientY - rect.top;
+      },
+      get isInside() {
+        const { clientX, clientY } = GlobalPointer.getCoords();
+        if (clientX < 0 || clientY < 0) return false;
+        if (isFullPage) return true;
+        if (!el || !el.isConnected) return false;
+        const rect = el.getBoundingClientRect();
+        const mx = clientX - rect.left;
+        const my = clientY - rect.top;
+        return (mx >= -20 && mx <= rect.width + 20 && my >= -20 && my <= rect.height + 20);
       }
-    }
+    };
 
-    function handlePointer(e) { updateMouse(e.clientX, e.clientY); }
-    function handleTouch(e) { if (e.touches && e.touches[0]) updateMouse(e.touches[0].clientX, e.touches[0].clientY); }
-    function handleLeave() { if (!isFullPage) mouse.isInside = false; }
-
-    window.addEventListener("pointermove", handlePointer, { passive: true, capture: true });
-    window.addEventListener("mousemove", handlePointer, { passive: true, capture: true });
-    window.addEventListener("touchmove", handleTouch, { passive: true, capture: true });
-    el.addEventListener("mouseleave", handleLeave, { passive: true });
-
-    function cleanup() {
-      window.removeEventListener("pointermove", handlePointer, { capture: true });
-      window.removeEventListener("mousemove", handlePointer, { capture: true });
-      window.removeEventListener("touchmove", handleTouch, { capture: true });
-      el.removeEventListener("mouseleave", handleLeave);
-    }
+    function cleanup() {}
 
     return { mouse, cleanup };
   }
@@ -1436,6 +1473,27 @@ const InteractiveBackgrounds = (() => {
       instance.destroy();
     }
     activeMounts.delete(targetEl);
+
+    // Restore original inline styles
+    if (originalStylesMap.has(targetEl)) {
+      const orig = originalStylesMap.get(targetEl);
+      if (orig.position) {
+        targetEl.style.position = orig.position;
+      } else {
+        targetEl.style.removeProperty("position");
+      }
+      if (orig.isolation) {
+        targetEl.style.isolation = orig.isolation;
+      } else {
+        targetEl.style.removeProperty("isolation");
+      }
+      if (orig.zIndex) {
+        targetEl.style.zIndex = orig.zIndex;
+      } else {
+        targetEl.style.removeProperty("z-index");
+      }
+      originalStylesMap.delete(targetEl);
+    }
 
     // Also remove any DOM canvases
     targetEl.querySelectorAll(":scope > .imagine-interactive-canvas, :scope > .imagine-webgl-canvas, :scope > .imagine-interactive-stamp").forEach(c => c.remove());
