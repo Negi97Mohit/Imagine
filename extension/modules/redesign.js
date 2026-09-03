@@ -13,7 +13,7 @@ const RedesignMode = (() => {
   // In-memory list of active redesign entries on this page
   let activeRedesignEntries = [];
 
-  // Safe background passthrough: only when body/html is explicitly targeted with an engine
+  // Safe background passthrough: only for top-level page wrapper containers when full-page engine is active
   const BG_PASSTHROUGH_ID = "open-sesame-bg-passthrough";
   function updateBgPassthrough(isNeeded) {
     let tag = document.getElementById(BG_PASSTHROUGH_ID);
@@ -24,9 +24,8 @@ const RedesignMode = (() => {
         document.head.appendChild(tag);
       }
       tag.textContent = `
-        html, body {
+        #root, #__next, #app, main, [data-reactroot], .main-content, .layout, .page-wrapper {
           background-color: transparent !important;
-          background-image: none !important;
         }
       `;
     } else if (tag) {
@@ -48,7 +47,16 @@ const RedesignMode = (() => {
     if (!rawSel) return "";
     const parts = rawSel.split(",").map((s) => s.trim()).filter(Boolean);
     return parts
-      .map((s) => `html body ${s}:not(#open-sesame-redesign-editor):not(#open-sesame-redesign-editor *):not([id^="open-sesame"]), ${s}:not(#open-sesame-redesign-editor):not(#open-sesame-redesign-editor *):not([id^="open-sesame"])`)
+      .map((s) => {
+        const lower = s.toLowerCase();
+        if (lower === "html" || lower === "body") {
+          return `${s}`;
+        }
+        if (lower.startsWith("body ") || lower.startsWith("body >") || lower.startsWith("html ")) {
+          return `${s}:not(#open-sesame-redesign-editor):not(#open-sesame-redesign-editor *):not([id^="open-sesame"])`;
+        }
+        return `html body ${s}:not(#open-sesame-redesign-editor):not(#open-sesame-redesign-editor *):not([id^="open-sesame"]), ${s}:not(#open-sesame-redesign-editor):not(#open-sesame-redesign-editor *):not([id^="open-sesame"])`;
+      })
       .join(", ");
   }
 
@@ -72,8 +80,88 @@ const RedesignMode = (() => {
     }
   }
 
-  // ---- Resilient & Global Selector Generation ----
-  function buildResilientSelector(el, isGlobal = false) {
+  // ---- Unique (This Element Only) Selector Generation ----
+  function getUniqueElementSelector(el) {
+    if (!el || el.nodeType !== 1) return null;
+    if (el === document.body) return "body";
+    if (el === document.documentElement) return "html";
+
+    // 1. Unique ID
+    if (el.id) {
+      try {
+        const idSel = `#${CSS.escape(el.id)}`;
+        if (document.querySelectorAll(idSel).length === 1) return idSel;
+      } catch (e) {}
+    }
+
+    // 2. Unique test / name / aria attribute
+    const testAttrs = ["data-testid", "data-test", "data-qa", "data-cy", "data-id", "name", "aria-label"];
+    for (const attr of testAttrs) {
+      const val = el.getAttribute(attr);
+      if (val) {
+        try {
+          const sel = `${el.tagName.toLowerCase()}[${attr}="${CSS.escape(val)}"]`;
+          if (document.querySelectorAll(sel).length === 1) return sel;
+        } catch (e) {}
+      }
+    }
+
+    // 3. Unique class combo
+    const tag = el.tagName.toLowerCase();
+    const rawClasses = typeof el.className === "string" ? el.className.trim().split(/\s+/).filter(Boolean) : [];
+    const looksHashed = (c) => /^[a-z0-9]{6,}$/i.test(c) && /\d/.test(c) && /[a-z]/i.test(c) && !/[-_]/.test(c);
+    const usableClasses = rawClasses.filter((c) => !looksHashed(c));
+    if (usableClasses.length) {
+      try {
+        const sel = `${tag}.${usableClasses.map((c) => CSS.escape(c)).join(".")}`;
+        if (document.querySelectorAll(sel).length === 1) return sel;
+      } catch (e) {}
+    }
+
+    // 4. Exact structural path with :nth-child all the way from nearest unique parent or body
+    const parts = [];
+    let node = el;
+    while (node && node.nodeType === 1 && node !== document.documentElement) {
+      if (node === document.body) {
+        parts.unshift("body");
+        break;
+      }
+      if (node.id) {
+        try {
+          if (document.querySelectorAll(`#${CSS.escape(node.id)}`).length === 1) {
+            parts.unshift(`#${CSS.escape(node.id)}`);
+            break;
+          }
+        } catch (e) {}
+      }
+
+      const parent = node.parentElement;
+      if (!parent) {
+        parts.unshift(node.tagName.toLowerCase());
+        break;
+      }
+
+      const index = Array.prototype.indexOf.call(parent.children, node) + 1;
+      parts.unshift(`${node.tagName.toLowerCase()}:nth-child(${index})`);
+      node = parent;
+    }
+
+    const fullPath = parts.join(" > ");
+    try {
+      if (document.querySelectorAll(fullPath).length === 1) {
+        return fullPath;
+      }
+    } catch (e) {}
+
+    // 5. Explicit persistent ID tag on element as fallback
+    if (!el.dataset.imagineUid) {
+      el.dataset.imagineUid = "uid_" + Math.random().toString(36).slice(2, 9);
+    }
+    return `[data-imagine-uid="${el.dataset.imagineUid}"]`;
+  }
+
+  // ---- Broad (All Matching Elements) Selector Generation ----
+  function getBroadElementSelector(el) {
     if (!el || el.nodeType !== 1) return null;
     if (el === document.body) return "body";
     if (el === document.documentElement) return "html";
@@ -83,67 +171,35 @@ const RedesignMode = (() => {
     const looksHashed = (c) => /^[a-z0-9]{6,}$/i.test(c) && /\d/.test(c) && /[a-z]/i.test(c) && !/[-_]/.test(c);
     const usableClasses = rawClasses.filter((c) => !looksHashed(c));
 
-    if (isGlobal) {
-      if (tag === "button" || el.getAttribute("role") === "button") {
-        if (usableClasses.length) return `${tag}.${usableClasses.slice(0, 2).map((c) => CSS.escape(c)).join(".")}`;
-        return "button, [role='button']";
-      }
-      if (tag === "input") {
-        const type = el.getAttribute("type") || "text";
-        if (usableClasses.length) return `input[type="${type}"].${usableClasses.slice(0, 1).map((c) => CSS.escape(c)).join(".")}`;
-        return `input[type="${type}"]`;
-      }
-      if (tag === "img") {
-        if (usableClasses.length) return `img.${usableClasses.slice(0, 2).map((c) => CSS.escape(c)).join(".")}`;
-        return "img";
-      }
-      if (tag === "header" || tag === "nav") return tag;
-      if (usableClasses.length) {
-        return `.${usableClasses.slice(0, 2).map((c) => CSS.escape(c)).join(".")}`;
-      }
+    if (tag === "button" || el.getAttribute("role") === "button") {
+      if (usableClasses.length) return `${tag}.${usableClasses.slice(0, 2).map((c) => CSS.escape(c)).join(".")}`;
+      return "button, [role='button']";
+    }
+    if (tag === "input") {
+      const type = el.getAttribute("type") || "text";
+      if (usableClasses.length) return `input[type="${type}"].${usableClasses.slice(0, 1).map((c) => CSS.escape(c)).join(".")}`;
+      return `input[type="${type}"]`;
+    }
+    if (tag === "a") {
+      if (usableClasses.length) return `a.${usableClasses.slice(0, 2).map((c) => CSS.escape(c)).join(".")}`;
+      return "a";
+    }
+    if (tag === "img") {
+      if (usableClasses.length) return `img.${usableClasses.slice(0, 2).map((c) => CSS.escape(c)).join(".")}`;
+      return "img";
+    }
+    if (["h1", "h2", "h3", "h4", "h5", "h6", "p", "nav", "header", "footer", "article", "section"].includes(tag)) {
+      if (usableClasses.length) return `${tag}.${usableClasses.slice(0, 2).map((c) => CSS.escape(c)).join(".")}`;
       return tag;
     }
-
-    // Single Element Mode (Specific)
-    if (el.id && document.querySelectorAll(`#${CSS.escape(el.id)}`).length === 1) {
-      return `#${CSS.escape(el.id)}`;
-    }
-
-    const stableAttrNames = ["data-testid", "data-test", "data-qa", "data-cy", "data-id", "name", "aria-label"];
-    for (const attrName of stableAttrNames) {
-      const val = el.getAttribute(attrName);
-      if (val) {
-        const sel = `[${attrName}="${CSS.escape(val)}"]`;
-        if (document.querySelectorAll(sel).length === 1) return sel;
-      }
-    }
-
     if (usableClasses.length) {
-      const sel = `${tag}.${usableClasses.slice(0, 2).map((c) => CSS.escape(c)).join(".")}`;
-      if (document.querySelectorAll(sel).length === 1) return sel;
+      return `.${usableClasses.slice(0, 2).map((c) => CSS.escape(c)).join(".")}`;
     }
+    return tag;
+  }
 
-    const parts = [];
-    let node = el;
-    let depth = 0;
-    while (node && node.nodeType === 1 && node !== document.body && depth < 8) {
-      let part = node.tagName.toLowerCase();
-      if (node.id) {
-        parts.unshift(`#${CSS.escape(node.id)}`);
-        node = null;
-        break;
-      }
-      const parent = node.parentElement;
-      if (parent) {
-        const siblings = Array.from(parent.children).filter((c) => c.tagName === node.tagName);
-        if (siblings.length > 1) part += `:nth-of-type(${siblings.indexOf(node) + 1})`;
-      }
-      parts.unshift(part);
-      node = parent;
-      depth++;
-    }
-    const prefix = node === document.body ? "body > " : "";
-    return prefix + parts.join(" > ");
+  function buildResilientSelector(el, isGlobal = false) {
+    return isGlobal ? getBroadElementSelector(el) : getUniqueElementSelector(el);
   }
 
   function safeQuery(selector) {
@@ -165,7 +221,8 @@ const RedesignMode = (() => {
   }
 
   function getDomainKey() {
-    return location.hostname || "default";
+    const host = (typeof location !== "undefined" && location.hostname) || "default";
+    return host.replace(/^www\./i, "").toLowerCase();
   }
 
   function getStorageKey() {
@@ -286,6 +343,13 @@ const RedesignMode = (() => {
             } catch (err) {
               console.warn("[Redesign] Custom JS blocked by page CSP. Use a built-in background preset instead.", err.message);
             }
+          }
+        }
+      } else {
+        if (typeof InteractiveBackgrounds !== "undefined") {
+          InteractiveBackgrounds.unmount(el);
+          if (el === document.body || el === document.documentElement) {
+            InteractiveBackgrounds.unmount(document.body);
           }
         }
       }
@@ -439,13 +503,19 @@ const RedesignMode = (() => {
           }
         }
       }
+    } else {
+      // Unmount any previous canvas engine when switching to static presets or custom styles
+      if (typeof InteractiveBackgrounds !== "undefined") {
+        InteractiveBackgrounds.unmount(el);
+        if (el === document.body || el === document.documentElement) {
+          InteractiveBackgrounds.unmount(document.body);
+        }
+      }
     }
 
     // Trigger transparent passthrough during live preview of background/shaders
     const isBgShader = Boolean(engineId) || (js && (js.includes("imagine-webgl-canvas") || js.includes("imagine-interactive-canvas"))) || (styles?.backgroundColor === "transparent" && !styles?.border);
-    if (isBgShader) {
-      updateBgPassthrough(true);
-    }
+    updateBgPassthrough(isBgShader);
   }
 
   function clearLivePreview(el) {
@@ -547,6 +617,7 @@ const RedesignMode = (() => {
 
     saveOriginalState(el);
     let currentEngineId = existingEntry?.engineId || null;
+    let activePreset = null;
     let isGlobalScope = existingEntry?.scope === "global" || false;
     let selector = existingEntry?.selector || buildResilientSelector(el, isGlobalScope);
     const tagName = el.tagName.toLowerCase();
@@ -564,43 +635,47 @@ const RedesignMode = (() => {
     function getThemeStyles(isDark) {
       if (isDark) {
         return {
-          bg: "#18181b",
-          border: "rgba(255,255,255,0.12)",
-          text: "#fafafa",
-          subtext: "#a1a1aa",
-          cardBg: "rgba(255,255,255,0.06)",
-          inputBg: "#27272a",
-          inputBorder: "rgba(255,255,255,0.12)",
-          primaryBtnBg: "#ffffff",
-          primaryBtnText: "#09090b",
-          secondaryBtnBg: "#27272a",
-          secondaryBtnText: "#d4d4d8",
-          shadow: "0 20px 48px rgba(0,0,0,0.5)",
-          activeTabBg: "#27272a",
-          activeTabText: "#ffffff",
+          bg: "#0d0d0d",
+          border: "rgba(242, 237, 228, 0.16)",
+          text: "#f2ede4",
+          subtext: "#9a9284",
+          cardBg: "#141414",
+          inputBg: "#1c1c1c",
+          inputBorder: "rgba(242, 237, 228, 0.18)",
+          accent: "#e56b3a",
+          accentBg: "rgba(229, 107, 58, 0.14)",
+          primaryBtnBg: "#f2ede4",
+          primaryBtnText: "#0d0d0d",
+          secondaryBtnBg: "#1c1c1c",
+          secondaryBtnText: "#cfc8bd",
+          shadow: "0 24px 60px rgba(0,0,0,0.65), 0 0 0 1px rgba(242,237,228,0.12)",
+          activeTabBg: "#f2ede4",
+          activeTabText: "#0d0d0d",
         };
       }
       return {
-        bg: "#ffffff",
-        border: "#e4e4e7",
-        text: "#09090b",
-        subtext: "#71717a",
-        cardBg: "#f4f4f5",
-        inputBg: "#ffffff",
-        inputBorder: "#e4e4e7",
-        primaryBtnBg: "#18181b",
-        primaryBtnText: "#ffffff",
-        secondaryBtnBg: "#f4f4f5",
-        secondaryBtnText: "#52525b",
-        shadow: "0 20px 48px rgba(0,0,0,0.12)",
-        activeTabBg: "#ffffff",
-        activeTabText: "#18181b",
+        bg: "#f4f1ec",
+        border: "rgba(10, 10, 10, 0.12)",
+        text: "#0a0a0a",
+        subtext: "#8a8378",
+        cardBg: "#ffffff",
+        inputBg: "#efeae2",
+        inputBorder: "rgba(10, 10, 10, 0.14)",
+        accent: "#b8410e",
+        accentBg: "rgba(184, 65, 14, 0.12)",
+        primaryBtnBg: "#0a0a0a",
+        primaryBtnText: "#f4f1ec",
+        secondaryBtnBg: "#efeae2",
+        secondaryBtnText: "#3a3a3a",
+        shadow: "0 24px 60px rgba(0,0,0,0.18), 0 0 0 1px rgba(10,10,10,0.08)",
+        activeTabBg: "#0a0a0a",
+        activeTabText: "#f4f1ec",
       };
     }
 
     panel.style.cssText =
       "position:fixed;right:20px;bottom:20px;width:340px;max-height:86vh;overflow-y:auto;" +
-      "border-radius:14px;z-index:2147483647;padding:16px;font:12px/1.45 -apple-system,BlinkMacSystemFont,Inter,system-ui,sans-serif;" +
+      "border-radius:14px;z-index:2147483647;padding:16px;font:12px/1.45 'Inter',-apple-system,BlinkMacSystemFont,system-ui,sans-serif;" +
       "box-sizing:border-box;display:flex;flex-direction:column;gap:12px;transition:all 0.2s ease;isolation:isolate !important;";
 
     let selectedPresetId = null;
@@ -617,83 +692,70 @@ const RedesignMode = (() => {
       panel.style.setProperty("opacity", "1", "important");
       panel.style.setProperty("visibility", "visible", "important");
 
-      const bgHex = toHexColor(existingStyles.backgroundColor, isDark ? "#27272a" : "#6366f1");
-      const colorHex = toHexColor(existingStyles.color, isDark ? "#ffffff" : "#09090b");
-      const borderHex = toHexColor(existingStyles.border, "#6366f1");
-      const shadowHex = toHexColor(existingStyles.boxShadow, "#6366f1");
+      const bgHex = toHexColor(existingStyles.backgroundColor, isDark ? "#27272a" : t.accent);
+      const colorHex = toHexColor(existingStyles.color, isDark ? "#f2ede4" : "#0a0a0a");
+      const borderHex = toHexColor(existingStyles.border, t.accent);
+      const shadowHex = toHexColor(existingStyles.boxShadow, t.accent);
 
-      const matchCount = safeQueryAll(selector).length;
+      const matchCountAll = safeQueryAll(getBroadElementSelector(el)).length;
+      const currentMatchCount = safeQueryAll(selector).length;
 
       panel.innerHTML = `
-        <div style="display:flex;align-items:center;justify-content:space-between;padding-bottom:8px;border-bottom:1px solid ${t.border};">
-          <div style="display:flex;align-items:center;gap:7px;">
-            <span style="width:7px;height:7px;border-radius:50%;background:#6366f1;"></span>
-            <span style="font-weight:700;font-size:12.5px;letter-spacing:-0.01em;">Redesign Studio</span>
+        <div style="display:flex;align-items:center;justify-content:space-between;padding-bottom:10px;border-bottom:1px solid ${t.border};">
+          <div style="display:flex;align-items:baseline;gap:6px;">
+            <span style="font-family:'Playfair Display',Georgia,serif;font-weight:900;font-size:15px;letter-spacing:0.01em;color:${t.text};">
+              Redesign <em style="font-style:italic;font-weight:400;color:${t.accent};">Studio</em>
+            </span>
+            <span style="font-size:9px;letter-spacing:0.18em;text-transform:uppercase;color:${t.subtext};font-weight:600;">Atelier</span>
           </div>
           <div style="display:flex;align-items:center;gap:6px;">
-            <button id="os-rd-theme-toggle" type="button" title="Toggle Light/Dark Theme" style="background:${t.cardBg};border:1px solid ${t.border};color:${t.text};border-radius:20px;padding:3px 8px;font-size:10px;cursor:pointer;font-weight:600;display:flex;align-items:center;gap:4px;">
+            <button id="os-rd-theme-toggle" type="button" title="Toggle Light/Dark Theme" style="background:${t.cardBg};border:1px solid ${t.border};color:${t.text};border-radius:20px;padding:3px 9px;font-size:9.5px;cursor:pointer;font-weight:600;display:flex;align-items:center;gap:4px;letter-spacing:0.06em;text-transform:uppercase;">
               ${isDark ? "☀️ Light" : "🌙 Dark"}
             </button>
-            <button id="os-rd-close" type="button" style="background:transparent;border:0;color:${t.subtext};font-size:16px;cursor:pointer;line-height:1;padding:2px 4px;">&times;</button>
+            <button id="os-rd-close" type="button" style="background:transparent;border:0;color:${t.subtext};font-size:18px;cursor:pointer;line-height:1;padding:2px 4px;">&times;</button>
           </div>
         </div>
 
-        <div style="background:rgba(99,102,241,0.10);padding:6px 10px;border-radius:7px;display:flex;align-items:center;justify-content:space-between;gap:6px;border:1px solid rgba(99,102,241,0.2);">
-          <div style="display:flex;align-items:center;gap:5px;color:#6366f1;font-weight:700;font-size:10.5px;">
-            <span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:#6366f1;"></span>
-            <span>👁️ Live Preview Active</span>
+        <div style="background:${t.accentBg};padding:7px 11px;border-radius:8px;display:flex;align-items:center;justify-content:space-between;gap:6px;border:1px solid ${t.border};">
+          <div style="display:flex;align-items:center;gap:6px;color:${t.accent};font-weight:700;font-size:10.5px;letter-spacing:0.04em;">
+            <span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:${t.accent};box-shadow:0 0 6px ${t.accent};"></span>
+            <span style="text-transform:uppercase;font-size:9.5px;letter-spacing:0.12em;">Live Canvas Active</span>
           </div>
-          <span style="font-size:9.5px;color:${t.subtext};">Applies on page live</span>
+          <span style="font-size:9px;color:${t.subtext};letter-spacing:0.04em;">Auto-applying live</span>
         </div>
 
-        <div style="background:${t.cardBg};padding:8px 10px;border-radius:8px;display:flex;flex-direction:column;gap:5px;">
-          <div style="display:flex;align-items:center;justify-content:space-between;gap:6px;">
-            <div style="display:flex;align-items:center;gap:5px;">
-              <span style="font-weight:700;font-size:11px;color:${t.text};">🌐 Global Restyling</span>
-              <span style="font-size:9px;color:#6366f1;font-weight:600;">(${matchCount} ${matchCount === 1 ? "element" : "elements"})</span>
-            </div>
-            <label style="position:relative;display:inline-block;width:32px;height:17px;cursor:pointer;flex-shrink:0;">
-              <input type="checkbox" id="os-rd-global-scope" ${isGlobalScope ? "checked" : ""} style="opacity:0;width:0;height:0;">
-              <span style="position:absolute;cursor:pointer;inset:0;background:${isGlobalScope ? "#6366f1" : t.inputBorder};border-radius:17px;transition:0.2s;">
-                <span style="position:absolute;content:'';height:13px;width:13px;left:${isGlobalScope ? "17px" : "2px"};bottom:2px;background:white;border-radius:50%;transition:0.2s;"></span>
-              </span>
-            </label>
+        <div style="background:${t.cardBg};padding:9px 10px;border-radius:8px;display:flex;flex-direction:column;gap:7px;border:1px solid ${t.border};">
+          <div style="display:flex;align-items:center;justify-content:space-between;">
+            <span style="font-weight:700;font-size:9.5px;text-transform:uppercase;letter-spacing:0.12em;color:${t.subtext};">Apply Redesign To:</span>
+            <span id="os-rd-scope-badge" style="font-size:9.5px;font-weight:700;color:${!isGlobalScope ? "#10b981" : t.accent};background:${!isGlobalScope ? "rgba(16,185,129,0.12)" : t.accentBg};padding:2px 7px;border-radius:4px;">
+              ${!isGlobalScope ? "🎯 1 element" : `🌐 ${currentMatchCount} elements`}
+            </span>
           </div>
-          <div style="font-size:10px;color:${t.subtext};word-break:break-all;">
-            <span style="color:#6366f1;font-weight:600;">Target:</span> <code>${selector}</code>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;background:${t.inputBg};padding:3px;border-radius:7px;border:1px solid ${t.inputBorder};">
+            <button id="os-rd-scope-single" type="button" style="padding:6px 6px;font-size:10px;font-weight:700;border-radius:5px;border:0;cursor:pointer;background:${!isGlobalScope ? t.primaryBtnBg : "transparent"};color:${!isGlobalScope ? t.primaryBtnText : t.subtext};transition:all 0.15s ease;display:flex;align-items:center;justify-content:center;gap:4px;letter-spacing:0.04em;">
+              🎯 This Element Only
+            </button>
+            <button id="os-rd-scope-all" type="button" style="padding:6px 6px;font-size:10px;font-weight:700;border-radius:5px;border:0;cursor:pointer;background:${isGlobalScope ? t.primaryBtnBg : "transparent"};color:${isGlobalScope ? t.primaryBtnText : t.subtext};transition:all 0.15s ease;display:flex;align-items:center;justify-content:center;gap:4px;letter-spacing:0.04em;">
+              🌐 All Matching (${matchCountAll})
+            </button>
           </div>
         </div>
 
-        <div style="display:flex;background:${t.cardBg};padding:2px;border-radius:8px;gap:2px;">
-          <button id="os-rd-tab-visual" type="button" style="flex:1;padding:5px 6px;font-size:10px;font-weight:600;border-radius:6px;border:0;cursor:pointer;background:${t.activeTabBg};color:${t.activeTabText};box-shadow:0 1px 3px rgba(0,0,0,0.06);">Visual</button>
-          <button id="os-rd-tab-presets" type="button" style="flex:1.2;padding:5px 6px;font-size:10px;font-weight:600;border-radius:6px;border:0;cursor:pointer;background:transparent;color:${t.subtext};">✨ Presets (72)</button>
-          <button id="os-rd-tab-code" type="button" style="flex:1;padding:5px 6px;font-size:10px;font-weight:600;border-radius:6px;border:0;cursor:pointer;background:transparent;color:${t.subtext};">Custom Code</button>
+        <div style="display:flex;background:${t.cardBg};padding:3px;border-radius:8px;gap:3px;border:1px solid ${t.border};">
+          <button id="os-rd-tab-visual" type="button" style="flex:1;padding:6px 6px;font-size:9.5px;font-weight:700;border-radius:6px;border:0;cursor:pointer;background:${t.activeTabBg};color:${t.activeTabText};letter-spacing:0.12em;text-transform:uppercase;">Visual</button>
+          <button id="os-rd-tab-presets" type="button" style="flex:1.2;padding:6px 6px;font-size:9.5px;font-weight:700;border-radius:6px;border:0;cursor:pointer;background:transparent;color:${t.subtext};letter-spacing:0.12em;text-transform:uppercase;">✨ Presets</button>
+          <button id="os-rd-tab-code" type="button" style="flex:1;padding:6px 6px;font-size:9.5px;font-weight:700;border-radius:6px;border:0;cursor:pointer;background:transparent;color:${t.subtext};letter-spacing:0.12em;text-transform:uppercase;">Code</button>
         </div>
 
         <div id="os-rd-presets-section" style="display:none;flex-direction:column;gap:8px;max-height:48vh;overflow-y:auto;padding-right:2px;">
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
             <select id="os-rd-preset-cat-filter" style="background:${t.inputBg};border:1px solid ${t.inputBorder};color:${t.text};padding:4px 6px;border-radius:6px;font-size:10px;outline:none;">
               <option value="all">All Categories</option>
-              <option value="background">Backgrounds (12)</option>
-              <option value="div">Structural Divs (10)</option>
-              <option value="card">Cards & Tiles (10)</option>
-              <option value="button">Buttons & CTAs (10)</option>
-              <option value="avatar">Avatars & Media (10)</option>
-              <option value="header">Headers & Navs (10)</option>
-              <option value="input">Inputs & Search (10)</option>
+              <option value="background">Backgrounds</option>
+              <option value="community">🌐 Community</option>
             </select>
             <select id="os-rd-preset-theme-filter" style="background:${t.inputBg};border:1px solid ${t.inputBorder};color:${t.text};padding:4px 6px;border-radius:6px;font-size:10px;outline:none;">
-              <option value="all">All Themes (10)</option>
-              <option value="Anime">Anime / Cyber-Mecha</option>
-              <option value="Vogue">Vogue Editorial</option>
-              <option value="Netflix">Netflix Cinematic</option>
-              <option value="Instagram">Instagram Sunset</option>
-              <option value="YouTube">YouTube Studio</option>
-              <option value="Apple">Apple Minimal</option>
-              <option value="Retro">Retro 90s / Y2K</option>
-              <option value="Neo-Brutalism">Neo-Brutalism</option>
-              <option value="Luxury">Luxury Gold</option>
-              <option value="Cyberpunk">Cyberpunk Matrix</option>
+              <option value="all">All Themes</option>
             </select>
           </div>
           <div id="os-rd-presets-list" style="display:flex;flex-direction:column;gap:6px;"></div>
@@ -770,14 +832,14 @@ const RedesignMode = (() => {
           </div>
         </div>
 
-        <div style="display:flex;gap:6px;border-top:1px solid ${t.border};padding-top:10px;margin-top:2px;">
-          <button id="os-rd-save" type="button" title="Apply to this element and save locally" style="flex:1.2;background:${t.primaryBtnBg};color:${t.primaryBtnText};border:0;padding:8px 10px;border-radius:7px;cursor:pointer;font-weight:700;font-size:11px;letter-spacing:0.02em;transition:all 0.15s ease;">
+        <div style="display:flex;gap:6px;border-top:1px solid ${t.border};padding-top:12px;margin-top:4px;">
+          <button id="os-rd-save" type="button" title="Apply to this element and save to cloud" style="flex:1.2;background:${t.primaryBtnBg};color:${t.primaryBtnText};border:0;padding:9px 10px;border-radius:7px;cursor:pointer;font-weight:700;font-size:10px;letter-spacing:0.12em;text-transform:uppercase;transition:all 0.15s ease;">
             ✓ Apply & Save
           </button>
-          <button id="os-rd-publish-community" type="button" title="Publish this preset to Firestore so other extension users can discover and apply it" style="flex:1.4;background:#b8410e;color:#ffffff;border:0;padding:8px 10px;border-radius:7px;cursor:pointer;font-weight:700;font-size:11px;letter-spacing:0.02em;transition:all 0.15s ease;">
+          <button id="os-rd-publish-community" type="button" title="Publish this preset to Firestore so other extension users can discover and apply it" style="flex:1.4;background:${t.accent};color:#ffffff;border:0;padding:9px 10px;border-radius:7px;cursor:pointer;font-weight:700;font-size:10px;letter-spacing:0.12em;text-transform:uppercase;transition:all 0.15s ease;">
             🌐 Share Community
           </button>
-          <button id="os-rd-cancel" type="button" style="flex:0.8;background:${t.secondaryBtnBg};color:${t.secondaryBtnText};border:0;padding:8px 8px;border-radius:7px;cursor:pointer;font-size:11px;font-weight:500;transition:all 0.15s ease;">
+          <button id="os-rd-cancel" type="button" style="flex:0.8;background:${t.secondaryBtnBg};color:${t.secondaryBtnText};border:1px solid ${t.border};padding:9px 8px;border-radius:7px;cursor:pointer;font-size:10px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;transition:all 0.15s ease;">
             Cancel
           </button>
         </div>
@@ -790,6 +852,23 @@ const RedesignMode = (() => {
       const visualSection = panel.querySelector("#os-rd-visual-section");
       const presetsSection = panel.querySelector("#os-rd-presets-section");
       const codeSection = panel.querySelector("#os-rd-code-section");
+      let activeTabName = "visual";
+
+      function updateFooterButtons() {
+        const isPreset = Boolean(selectedPresetId && activeTabName === "presets");
+        const publishBtn = panel.querySelector("#os-rd-publish-community");
+        const saveBtn = panel.querySelector("#os-rd-save");
+        if (publishBtn && saveBtn) {
+          if (isPreset) {
+            publishBtn.style.display = "none";
+            saveBtn.style.flex = "2";
+          } else {
+            publishBtn.style.display = "block";
+            publishBtn.style.flex = "1.4";
+            saveBtn.style.flex = "1.2";
+          }
+        }
+      }
 
       function switchTab(activeTab, activeSection) {
         [tabVisual, tabPresets, tabCode].forEach((tBtn) => {
@@ -806,13 +885,23 @@ const RedesignMode = (() => {
         activeSection.style.display = "flex";
       }
 
-      tabVisual.addEventListener("click", () => switchTab(tabVisual, visualSection));
+      tabVisual.addEventListener("click", () => {
+        activeTabName = "visual";
+        switchTab(tabVisual, visualSection);
+        updateFooterButtons();
+      });
       tabPresets.addEventListener("click", () => {
+        activeTabName = "presets";
         switchTab(tabPresets, presetsSection);
         renderPresetsList();
+        updateFooterButtons();
         setTimeout(scrollToActivePreset, 60);
       });
-      tabCode.addEventListener("click", () => switchTab(tabCode, codeSection));
+      tabCode.addEventListener("click", () => {
+        activeTabName = "code";
+        switchTab(tabCode, codeSection);
+        updateFooterButtons();
+      });
 
       function scrollToActivePreset() {
         const listContainer = panel.querySelector("#os-rd-presets-list");
@@ -849,7 +938,18 @@ const RedesignMode = (() => {
           return cachedAllPresets;
         }
 
-        // 1. Built-in Seed Presets from Local JSON
+        // 1. Fetch Community Presets from Firestore via Background Service Worker
+        let communityPresets = [];
+        try {
+          const res = await new Promise((resolve) => {
+            chrome.runtime.sendMessage({ type: "LIST_COMMUNITY_PRESETS" }, (r) => resolve(r));
+          });
+          if (res && res.ok && Array.isArray(res.items) && res.items.length) {
+            communityPresets = res.items;
+          }
+        } catch (e) {}
+
+        // 2. Built-in Seed Presets from Local JSON (fallback / merge)
         let seedPresets = [];
         try {
           const url = chrome.runtime.getURL("modules/redesign-presets.json");
@@ -864,17 +964,6 @@ const RedesignMode = (() => {
                         (typeof window !== "undefined" && window.REDESIGN_PRESETS) || [];
         }
 
-        // 2. Fetch Community Presets from Firestore via Background Service Worker
-        let communityPresets = [];
-        try {
-          const res = await new Promise((resolve) => {
-            chrome.runtime.sendMessage({ type: "LIST_COMMUNITY_PRESETS" }, (r) => resolve(r));
-          });
-          if (res && res.ok && Array.isArray(res.items)) {
-            communityPresets = res.items;
-          }
-        } catch (e) {}
-
         // 3. Merge idempotently without duplicates
         const presetMap = new Map();
         seedPresets.forEach((p) => {
@@ -884,7 +973,7 @@ const RedesignMode = (() => {
         });
         communityPresets.forEach((p) => {
           if (p && p.id) {
-            presetMap.set(p.id, { ...p, isCommunity: true });
+            presetMap.set(p.id, { ...p });
           }
         });
 
@@ -896,8 +985,43 @@ const RedesignMode = (() => {
       async function renderPresetsList() {
         const listContainer = panel.querySelector("#os-rd-presets-list");
         if (!listContainer) return;
-        listContainer.innerHTML = `<div style="padding:14px;text-align:center;color:${t.subtext};font-size:10.5px;">Loading presets & community creations…</div>`;
+        listContainer.innerHTML = `<div style="padding:14px;text-align:center;color:${t.subtext};font-size:10.5px;">Loading presets from Firestore…</div>`;
         const allPresets = await loadAllPresets();
+
+        // Update Presets tab title with true live count
+        const tabPresetsBtn = panel.querySelector("#os-rd-tab-presets");
+        if (tabPresetsBtn) {
+          tabPresetsBtn.textContent = `✨ Presets (${allPresets.length})`;
+        }
+
+        // Dynamically update category options with real counts
+        if (catFilter) {
+          const currentCat = catFilter.value || "all";
+          const bgCount = allPresets.filter((p) => p.category === "background").length;
+          const communityCount = allPresets.filter((p) => p.isCommunity).length;
+          const customCount = allPresets.filter((p) => p.category !== "background" && !p.isCommunity).length;
+
+          let catHtml = `<option value="all">All Categories (${allPresets.length})</option>`;
+          if (bgCount > 0) catHtml += `<option value="background">Backgrounds (${bgCount})</option>`;
+          if (communityCount > 0) catHtml += `<option value="community">🌐 Community (${communityCount})</option>`;
+          if (customCount > 0) catHtml += `<option value="custom">Elements (${customCount})</option>`;
+          catFilter.innerHTML = catHtml;
+          catFilter.value = currentCat;
+        }
+
+        // Dynamically update theme options with real counts
+        if (themeFilter) {
+          const currentTheme = themeFilter.value || "all";
+          const themes = new Set(allPresets.map((p) => (p.theme || "").split("/")[0].trim()).filter(Boolean));
+          let themeHtml = `<option value="all">All Themes (${allPresets.length})</option>`;
+          themes.forEach((th) => {
+            const count = allPresets.filter((p) => (p.theme || "").toLowerCase().includes(th.toLowerCase())).length;
+            themeHtml += `<option value="${th}">${th} (${count})</option>`;
+          });
+          themeFilter.innerHTML = themeHtml;
+          themeFilter.value = currentTheme;
+        }
+
         const selectedCat = catFilter ? catFilter.value : "all";
         const selectedTheme = themeFilter ? themeFilter.value : "all";
 
@@ -912,10 +1036,14 @@ const RedesignMode = (() => {
           return;
         }
 
+        const savedScroll = presetsSection ? presetsSection.scrollTop : 0;
         listContainer.innerHTML = "";
         filtered.forEach((p) => {
           const isSelected = p.id === selectedPresetId;
           const item = document.createElement("div");
+          item.dataset.presetCard = "true";
+          item.dataset.presetId = p.id;
+          item.dataset.presetName = p.name;
           if (isSelected) {
             item.dataset.presetActive = "true";
           }
@@ -924,36 +1052,36 @@ const RedesignMode = (() => {
           const borderPreview = p.styles?.border || "1px solid rgba(0,0,0,0.1)";
           const colorPreview = p.styles?.color || "#ffffff";
 
-          const activeBorder = isSelected ? "#6366f1" : t.border;
-          const activeBg = isSelected ? (isDark ? "rgba(99,102,241,0.22)" : "rgba(99,102,241,0.10)") : t.cardBg;
-          const activeShadow = isSelected ? "0 0 10px rgba(99,102,241,0.28)" : "none";
+          const activeBorder = isSelected ? t.accent : t.border;
+          const activeBg = isSelected ? t.accentBg : t.cardBg;
+          const activeShadow = isSelected ? `0 0 14px ${t.accent}44` : "none";
 
           item.style.cssText =
-            `background:${activeBg};border:1.5px solid ${activeBorder};border-radius:8px;padding:8px 10px;` +
-            `cursor:pointer;display:flex;flex-direction:column;gap:4px;transition:all 0.15s ease;box-shadow:${activeShadow};`;
+            `background:${activeBg};border:1.5px solid ${activeBorder};border-radius:8px;padding:9px 11px;` +
+            `cursor:pointer;display:flex;flex-direction:column;gap:5px;transition:all 0.15s ease;box-shadow:${activeShadow};`;
 
           const communityTag = p.isCommunity
-            ? `<span style="font-size:8px;padding:1px 4px;border-radius:3px;background:rgba(184,65,14,0.18);color:#b8410e;font-weight:700;">🌐 Community</span>`
+            ? `<span style="font-size:8px;padding:1px 5px;border-radius:3px;background:rgba(184,65,14,0.18);color:${t.accent};font-weight:700;">🌐 Community</span>`
             : "";
 
           item.innerHTML = `
             <div style="display:flex;align-items:center;justify-content:space-between;gap:6px;">
-              <div style="font-weight:700;font-size:11px;color:${isSelected ? "#6366f1" : t.text};display:flex;align-items:center;gap:4px;">
+              <div class="os-preset-title" style="font-weight:700;font-size:11px;color:${isSelected ? t.accent : t.text};display:flex;align-items:center;gap:4px;">
                 ${isSelected ? "✓ " : ""}${p.name}
               </div>
               <div style="display:flex;align-items:center;gap:4px;">
                 ${communityTag}
-                <span style="font-size:8.5px;padding:2px 5px;border-radius:4px;background:rgba(99,102,241,0.15);color:#6366f1;font-weight:600;white-space:nowrap;">${(p.theme || "Preset").split('/')[0].trim()}</span>
+                <span style="font-size:8.5px;padding:2px 5px;border-radius:4px;background:${t.inputBg};color:${t.subtext};font-weight:600;white-space:nowrap;border:1px solid ${t.border};">${(p.theme || "Preset").split('/')[0].trim()}</span>
               </div>
             </div>
-            <div style="font-size:9.5px;color:${t.subtext};line-height:1.3;">${p.description || "Interactive preset restyling"}</div>
-            <div style="display:flex;align-items:center;justify-content:space-between;margin-top:4px;">
-              <div style="display:flex;align-items:center;gap:4px;">
+            <div style="font-size:9.5px;color:${t.subtext};line-height:1.35;">${p.description || "Interactive preset restyling"}</div>
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-top:3px;">
+              <div style="display:flex;align-items:center;gap:5px;">
                 <span style="width:12px;height:12px;border-radius:3px;background:${bgPreview};border:${borderPreview};" title="Background preview"></span>
                 <span style="width:12px;height:12px;border-radius:50%;background:${colorPreview};border:1px solid rgba(0,0,0,0.1);" title="Text color"></span>
                 <span style="font-size:9px;color:${t.subtext};text-transform:capitalize;">${p.category || "custom"}</span>
               </div>
-              <button type="button" style="background:${isSelected ? "#6366f1" : t.primaryBtnBg};color:#ffffff;border:0;border-radius:4px;padding:3px 8px;font-size:9.5px;font-weight:700;cursor:pointer;">
+              <button type="button" class="os-preset-btn" style="background:${isSelected ? t.accent : t.primaryBtnBg};color:${isSelected ? '#ffffff' : t.primaryBtnText};border:0;border-radius:4px;padding:3px 9px;font-size:9.5px;font-weight:700;cursor:pointer;letter-spacing:0.04em;">
                 ${isSelected ? "✓ Previewing" : "Preview"}
               </button>
             </div>
@@ -961,8 +1089,8 @@ const RedesignMode = (() => {
 
           // Live preview on hover before clicking
           item.addEventListener("pointerenter", () => {
-            if (!isSelected) {
-              item.style.borderColor = "#6366f1";
+            if (selectedPresetId !== p.id) {
+              item.style.borderColor = t.accent;
               item.style.transform = "translateY(-1px)";
               applyLivePreview(el, { styles: p.styles, cssText: p.cssText, html: p.html, js: p.js, engineId: p.engineId });
             }
@@ -970,27 +1098,59 @@ const RedesignMode = (() => {
 
           // Restore active preset preview on mouse leave
           item.addEventListener("pointerleave", () => {
-            if (!isSelected) {
+            if (selectedPresetId !== p.id) {
               item.style.borderColor = t.border;
               item.style.transform = "none";
               updateLivePreview();
             }
           });
 
-          // Select and lock in preset on click
+          // Select and lock in preset on click WITHOUT reloading list or resetting scroll!
           item.addEventListener("click", () => {
             selectedPresetId = p.id;
             applyPresetValues(p);
-            renderPresetsList();
-            setTimeout(scrollToActivePreset, 40);
+
+            // Update all cards in-place: scroll position stays completely stationary!
+            const allCards = listContainer.querySelectorAll("[data-preset-card]");
+            allCards.forEach((card) => {
+              const cardId = card.dataset.presetId;
+              const isNowActive = cardId === p.id;
+              card.dataset.presetActive = isNowActive ? "true" : "false";
+
+              card.style.borderColor = isNowActive ? t.accent : t.border;
+              card.style.background = isNowActive ? t.accentBg : t.cardBg;
+              card.style.boxShadow = isNowActive ? `0 0 14px ${t.accent}44` : "none";
+
+              const titleEl = card.querySelector(".os-preset-title");
+              if (titleEl) {
+                const name = card.dataset.presetName || "";
+                titleEl.textContent = isNowActive ? `✓ ${name}` : name;
+                titleEl.style.color = isNowActive ? t.accent : t.text;
+              }
+
+              const btnEl = card.querySelector(".os-preset-btn");
+              if (btnEl) {
+                btnEl.textContent = isNowActive ? "✓ Previewing" : "Preview";
+                btnEl.style.background = isNowActive ? t.accent : t.primaryBtnBg;
+                btnEl.style.color = isNowActive ? "#ffffff" : t.primaryBtnText;
+              }
+            });
+
+            updateFooterButtons();
+            updateLivePreview();
           });
 
           listContainer.appendChild(item);
         });
+
+        if (presetsSection && savedScroll > 0) {
+          presetsSection.scrollTop = savedScroll;
+        }
       }
 
       function applyPresetValues(preset) {
         if (!preset) return;
+        activePreset = preset;
         currentEngineId = preset.engineId || null;
         const nameInput = panel.querySelector("#os-rd-name");
         const bgInput = panel.querySelector("#os-rd-bg");
@@ -1056,12 +1216,23 @@ const RedesignMode = (() => {
         renderPanelContent();
       });
 
-      // Global Scope Toggle Listener
-      const scopeToggle = panel.querySelector("#os-rd-global-scope");
-      if (scopeToggle) {
-        scopeToggle.addEventListener("change", () => {
-          isGlobalScope = scopeToggle.checked;
-          selector = buildResilientSelector(el, isGlobalScope);
+      // Scope Segmented Buttons Listener
+      const scopeSingleBtn = panel.querySelector("#os-rd-scope-single");
+      const scopeAllBtn = panel.querySelector("#os-rd-scope-all");
+      if (scopeSingleBtn && scopeAllBtn) {
+        scopeSingleBtn.addEventListener("click", () => {
+          if (!isGlobalScope) return;
+          clearLivePreview(el);
+          isGlobalScope = false;
+          selector = getUniqueElementSelector(el);
+          renderPanelContent();
+          updateLivePreview();
+        });
+        scopeAllBtn.addEventListener("click", () => {
+          if (isGlobalScope) return;
+          clearLivePreview(el);
+          isGlobalScope = true;
+          selector = getBroadElementSelector(el);
           renderPanelContent();
           updateLivePreview();
         });
@@ -1162,8 +1333,18 @@ const RedesignMode = (() => {
       ["#os-rd-bg", "#os-rd-color", "#os-rd-border", "#os-rd-radius", "#os-rd-shadow", "#os-rd-css", "#os-rd-html", "#os-rd-js"].forEach((id) => {
         const elInput = panel.querySelector(id);
         if (elInput) {
-          elInput.addEventListener("input", updateLivePreview);
-          elInput.addEventListener("change", updateLivePreview);
+          elInput.addEventListener("input", () => {
+            selectedPresetId = null;
+            activePreset = null;
+            updateFooterButtons();
+            updateLivePreview();
+          });
+          elInput.addEventListener("change", () => {
+            selectedPresetId = null;
+            activePreset = null;
+            updateFooterButtons();
+            updateLivePreview();
+          });
         }
       });
 
@@ -1188,14 +1369,18 @@ const RedesignMode = (() => {
       const html = panel.querySelector("#os-rd-html")?.value || "";
       const js = panel.querySelector("#os-rd-js")?.value || "";
 
-      const styles = {};
-      styles.backgroundColor = bg;
-      styles.color = color;
-      styles.border = border;
-      styles.borderRadius = borderRadius;
-      styles.boxShadow = shadow;
+      // Preserve all preset styles (e.g. backgroundImage, fontFamily, letterSpacing, backgroundSize)
+      const styles = { ...(activePreset?.styles || {}) };
+      if (bg) styles.backgroundColor = bg;
+      if (color) styles.color = color;
+      if (border) styles.border = border;
+      if (borderRadius) styles.borderRadius = borderRadius;
+      if (shadow) styles.boxShadow = shadow;
 
-      applyLivePreview(el, { styles, cssText: sanitizeCss(cssText), html, js, engineId: currentEngineId });
+      // Effective cssText
+      const effectiveCss = cssText || activePreset?.cssText || "";
+
+      applyLivePreview(el, { styles, cssText: sanitizeCss(effectiveCss), html, js, engineId: currentEngineId });
     }
 
     function closeAndRevert() {
@@ -1225,12 +1410,14 @@ const RedesignMode = (() => {
       const html = panel.querySelector("#os-rd-html")?.value || "";
       const js = panel.querySelector("#os-rd-js")?.value || "";
 
-      const styles = {};
+      const styles = { ...(activePreset?.styles || {}) };
       if (bg) styles.backgroundColor = bg;
       if (color) styles.color = color;
       if (border) styles.border = border;
       if (borderRadius) styles.borderRadius = borderRadius;
       if (shadow) styles.boxShadow = shadow;
+
+      const effectiveCss = cssText || activePreset?.cssText || "";
 
       const pushId = existingEntry?.pushId || existingEntry?.id || "rd_" + Date.now().toString(36);
       const entry = {
@@ -1239,6 +1426,7 @@ const RedesignMode = (() => {
         selector,
         name,
         enabled: true,
+        visibility: "shared",
         scope: isGlobalScope ? "global" : "page",
         pageUrl: location.pathname,
         styles,
@@ -1382,32 +1570,76 @@ const RedesignMode = (() => {
     });
   }
 
-  // ---- Init & Auto-Apply on Page Load ----
-  async function init() {
-    startDomWatcher();
+  // ---- Hidden Redesigns (Viewer-Only Local Hiding) ----
+  async function getHiddenRedesignIds() {
+    const key = `hiddenRedesigns_${getDomainKey()}`;
+    const store = await chrome.storage.local.get(key);
+    return Array.isArray(store[key]) ? store[key] : [];
+  }
 
-    // 1. Read local storage first for instant synchronous feel
-    const localEntries = await getLocalRedesigns();
-    if (localEntries.length) {
-      activeRedesignEntries = localEntries;
-      localEntries.forEach((entry) => {
-        if (entry.enabled !== false) applyRedesignEntry(entry);
-      });
+  async function setRedesignHidden(idOrPushId, hidden) {
+    const key = `hiddenRedesigns_${getDomainKey()}`;
+    const current = await getHiddenRedesignIds();
+    const next = new Set(current);
+    if (hidden) {
+      next.add(idOrPushId);
+    } else {
+      next.delete(idOrPushId);
     }
+    const arr = Array.from(next);
+    await chrome.storage.local.set({ [key]: arr });
 
-    // 2. Sync from database in background
+    // Instantly update live DOM state
+    const list = await getLocalRedesigns();
+    const entry = list.find((x) => x.id === idOrPushId || x.pushId === idOrPushId || x.selector === idOrPushId);
+    if (entry) {
+      if (hidden) {
+        unapplyRedesignEntry(entry);
+      } else {
+        if (entry.enabled !== false) applyRedesignEntry(entry);
+      }
+    }
+    checkActiveBgPassthrough();
+    return arr;
+  }
+
+  // ---- Continuous Sync & Auto-Apply on Page Load ----
+  async function syncDomainRedesigns() {
     chrome.runtime.sendMessage(
       { type: "GET_REDESIGNS_FOR_DOMAIN", domain: getDomainKey() },
       async (res) => {
         if (!res || !res.ok || !Array.isArray(res.items)) return;
         const dbItems = res.items;
         const currentList = await getLocalRedesigns();
-        const merged = [...currentList];
+        const hiddenIds = new Set(await getHiddenRedesignIds());
 
+        // 1. Prune items that were deleted from the cloud database
+        const dbPushIds = new Set(dbItems.map((d) => d.pushId || d.id));
+        const prunedList = [];
+        for (const localItem of currentList) {
+          const pid = localItem.pushId || localItem.id;
+          // If it was a cloud item (starts with rd_ or has pushId) and is no longer in dbItems:
+          if (pid && !pid.startsWith("local_") && !dbPushIds.has(pid)) {
+            // Deleted by creator in cloud! Instantly unapply from DOM
+            unapplyRedesignEntry(localItem);
+          } else {
+            prunedList.push(localItem);
+          }
+        }
+
+        // 2. Merge latest cloud items into pruned list
+        const merged = [...prunedList];
         for (const item of dbItems) {
-          const exists = merged.find((x) => x.pushId === item.pushId || x.selector === item.selector);
-          if (!exists) {
+          const idx = merged.findIndex(
+            (x) =>
+              x.pushId === item.pushId ||
+              x.id === item.pushId ||
+              (x.selector === item.selector && x.scope === item.scope)
+          );
+          if (idx < 0) {
             merged.push({ ...item, id: item.pushId, enabled: true });
+          } else {
+            merged[idx] = { ...merged[idx], ...item, enabled: merged[idx].enabled !== false };
           }
         }
 
@@ -1415,14 +1647,56 @@ const RedesignMode = (() => {
         await chrome.storage.local.set({ [key]: merged });
         activeRedesignEntries = merged;
 
+        // 3. Apply active non-hidden redesigns; unapply hidden ones
         merged.forEach((entry) => {
-          if (entry.enabled !== false) applyRedesignEntry(entry);
+          const pid = entry.pushId || entry.id;
+          if (hiddenIds.has(pid)) {
+            unapplyRedesignEntry(entry);
+          } else if (entry.enabled !== false) {
+            applyRedesignEntry(entry);
+          }
         });
+        checkActiveBgPassthrough();
       }
     );
   }
 
-  // Listen for messages from popup
+  async function init() {
+    startDomWatcher();
+
+    // 1. Read local storage first for instant synchronous paint
+    const localEntries = await getLocalRedesigns();
+    const hiddenIds = new Set(await getHiddenRedesignIds());
+    if (localEntries.length) {
+      activeRedesignEntries = localEntries;
+      localEntries.forEach((entry) => {
+        const pid = entry.pushId || entry.id;
+        if (!hiddenIds.has(pid) && entry.enabled !== false) {
+          applyRedesignEntry(entry);
+        }
+      });
+      checkActiveBgPassthrough();
+    }
+
+    // 2. Sync from database (RTDB & Firestore)
+    await syncDomainRedesigns();
+  }
+
+  // Live periodic polling for multi-user sync across different browsers & tabs (matches image binding architecture)
+  setInterval(() => {
+    if (typeof document !== "undefined" && !document.hidden) {
+      syncDomainRedesigns();
+    }
+  }, 8000);
+
+  if (typeof window !== "undefined") {
+    window.addEventListener("focus", syncDomainRedesigns);
+    document.addEventListener("visibilitychange", () => {
+      if (!document.hidden) syncDomainRedesigns();
+    });
+  }
+
+  // Listen for messages from popup and background
   chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     if (msg.type === "START_REDESIGN_PICKER") {
       startPicker((el) => openEditorPanel(el));
@@ -1431,8 +1705,16 @@ const RedesignMode = (() => {
     }
 
     if (msg.type === "GET_PAGE_REDESIGNS") {
-      getLocalRedesigns().then((items) => {
-        sendResponse({ ok: true, items, domain: getDomainKey() });
+      getLocalRedesigns().then(async (items) => {
+        const hiddenIds = await getHiddenRedesignIds();
+        sendResponse({ ok: true, items, domain: getDomainKey(), hiddenIds });
+      });
+      return true;
+    }
+
+    if (msg.type === "HIDE_PAGE_REDESIGN") {
+      setRedesignHidden(msg.id, msg.hidden).then((hiddenIds) => {
+        sendResponse({ ok: true, hiddenIds });
       });
       return true;
     }
@@ -1473,6 +1755,22 @@ const RedesignMode = (() => {
           sendResponse({ ok: false, error: "Redesign entry not found" });
         }
       });
+      return true;
+    }
+
+    if (msg.type === "REDESIGN_DELETED") {
+      const pid = msg.pushId;
+      if (pid) {
+        deleteRedesignLocally(pid);
+      }
+      syncDomainRedesigns();
+      sendResponse({ ok: true });
+      return true;
+    }
+
+    if (msg.type === "REDESIGN_CHANGED") {
+      syncDomainRedesigns();
+      sendResponse({ ok: true });
       return true;
     }
   });

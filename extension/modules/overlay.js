@@ -339,18 +339,21 @@ const AssetOverlay = (() => {
 
           const row = makeEl(
             "div",
-            `padding:8px 10px;background:${isCurrentActive ? "#f4f4f5" : "#ffffff"};border:1px solid ${isCurrentActive ? "#18181b" : "#e4e4e7"};border-radius:8px;margin-bottom:5px;display:flex;align-items:center;gap:8px;cursor:pointer;transition:all 0.15s ease;`
+            `padding:8px 10px;background:${isCurrentActive ? "#f4f4f5" : "#ffffff"};border:1px solid ${isCurrentActive ? "#18181b" : "#e4e4e7"};border-radius:8px;margin-bottom:6px;display:flex;flex-direction:column;gap:6px;cursor:pointer;transition:all 0.15s ease;`
           );
           row.setAttribute("data-push-id", b.pushId);
           row.setAttribute("data-name", (b.interaction.name || "").toLowerCase());
 
-          const icon = makeEl("span", `font-size:10px;font-weight:bold;color:${isCurrentActive ? "#18181b" : "#a1a1aa"};`);
+          // Top Header Line: Icon, Name, Action Button
+          const topBar = makeEl("div", "display:flex;align-items:center;gap:8px;width:100%;");
+
+          const icon = makeEl("span", `font-size:10px;font-weight:bold;color:${isCurrentActive ? "#18181b" : "#a1a1aa"};flex-shrink:0;`);
           icon.textContent = isCurrentActive ? "●" : "○";
-          row.appendChild(icon);
+          topBar.appendChild(icon);
 
           const nameSpan = makeEl("span", `flex:1;font-weight:${isCurrentActive ? "600" : "500"};font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#18181b;`);
           nameSpan.textContent = b.interaction.name || "Untitled";
-          row.appendChild(nameSpan);
+          topBar.appendChild(nameSpan);
 
           if (isMine) {
             const removeBtn = makeEl("button", "background:transparent;color:#ef4444;border:1px solid rgba(239,68,68,0.3);font-size:9px;padding:2px 6px;cursor:pointer;border-radius:4px;font-weight:600;flex-shrink:0;transition:all 0.15s ease;");
@@ -362,7 +365,7 @@ const AssetOverlay = (() => {
               onUnbind && onUnbind(b.pushId);
               closeMenu();
             };
-            row.appendChild(removeBtn);
+            topBar.appendChild(removeBtn);
           } else {
             const hideBtn = makeEl("button", "background:transparent;color:#71717a;border:1px solid #e4e4e7;font-size:9px;padding:2px 6px;cursor:pointer;border-radius:4px;font-weight:500;flex-shrink:0;");
             hideBtn.textContent = "Hide";
@@ -381,11 +384,69 @@ const AssetOverlay = (() => {
               closeMenu();
               updateBadge();
             };
-            row.appendChild(hideBtn);
+            topBar.appendChild(hideBtn);
+          }
+          row.appendChild(topBar);
+
+          // Inline Sizing Control for Active Binding (allows changing Fit, Stretch, Crop, Original anytime)
+          if (isCurrentActive) {
+            const currentSizing = (b.interaction.attachment && b.interaction.attachment.sizingMode) ||
+              (b.interaction.css && /object-fit\s*:\s*fill/i.test(b.interaction.css) ? "fill" :
+               b.interaction.css && /object-fit\s*:\s*cover/i.test(b.interaction.css) ? "cover" :
+               b.interaction.css && /object-fit\s*:\s*none/i.test(b.interaction.css) ? "none" : "contain");
+
+            const sizingBar = makeEl(
+              "div",
+              "margin-top:2px;padding-top:6px;border-top:1px dashed #e4e4e7;display:flex;align-items:center;justify-content:space-between;width:100%;gap:4px;"
+            );
+
+            const sizeLabel = makeEl("span", "font-size:9.5px;color:#64748b;font-weight:600;display:flex;align-items:center;gap:3px;");
+            sizeLabel.innerHTML = `<span>📐 Size:</span>`;
+            sizingBar.appendChild(sizeLabel);
+
+            const sizeSelect = makeEl("select", "font-size:9.5px;padding:2px 6px;border:1px solid #cbd5e1;border-radius:4px;background:#ffffff;color:#18181b;outline:none;cursor:pointer;font-weight:600;");
+            sizeSelect.innerHTML = `
+              <option value="contain"${currentSizing === "contain" ? " selected" : ""}>Fit (Aspect Ratio)</option>
+              <option value="fill"${currentSizing === "fill" ? " selected" : ""}>Stretch (Full Frame)</option>
+              <option value="cover"${currentSizing === "cover" ? " selected" : ""}>Crop (Fill Frame)</option>
+              <option value="none"${currentSizing === "none" ? " selected" : ""}>Original (Center)</option>
+            `;
+
+            sizeSelect.onclick = (e) => e.stopPropagation();
+            sizeSelect.onchange = async (e) => {
+              e.stopPropagation();
+              const newMode = e.target.value;
+
+              if (typeof updateInteractionSizing === "function") {
+                updateInteractionSizing(b.interaction, newMode);
+              } else {
+                if (!b.interaction.attachment) b.interaction.attachment = {};
+                b.interaction.attachment.sizingMode = newMode;
+                b.interaction.css = (b.interaction.css || "").replace(/object-fit\s*:\s*[^;!]+(?:\s*!important)?/gi, `object-fit: ${newMode} !important`);
+              }
+
+              activeBinding = b.interaction;
+              deactivateSandbox();
+              activateSandbox();
+
+              if (onBindInteraction) {
+                await onBindInteraction(b.interaction);
+              }
+
+              noticeEl.innerHTML = `✓ Sizing changed to <b>${newMode.toUpperCase()}</b> & synced to cloud.`;
+              noticeEl.style.background = "#f0fdf4";
+              noticeEl.style.borderColor = "#bbf7d0";
+              noticeEl.style.color = "#166534";
+              noticeEl.style.display = "block";
+              setTimeout(() => { if (noticeEl) noticeEl.style.display = "none"; }, 3000);
+            };
+
+            sizingBar.appendChild(sizeSelect);
+            row.appendChild(sizingBar);
           }
 
           row.onclick = (e) => {
-            if (e.target.tagName === "BUTTON") return;
+            if (e.target.tagName === "BUTTON" || e.target.tagName === "SELECT" || e.target.tagName === "OPTION") return;
             e.stopPropagation();
             activeBinding = b.interaction;
             closeMenu();
@@ -460,19 +521,31 @@ const AssetOverlay = (() => {
         }
       };
 
-      // ---- Section: Quick Media Attachment (PDF, Video, GIF, Doc, Image) ----
+      // ---- Section: Quick Media Attachment (Video, GIF, Image) ----
       const mediaSection = makeEl("div", "margin-bottom:12px;padding:10px;background:#f8fafc;border:1px dashed #cbd5e1;border-radius:8px;text-align:center;");
       const mediaTitle = makeEl("div", "font-weight:700;font-size:10.5px;color:#334155;margin-bottom:4px;display:flex;align-items:center;justify-content:center;gap:4px;");
-      mediaTitle.innerHTML = `📎 <span>Attach Media / Document</span>`;
+      mediaTitle.innerHTML = `📎 <span>Attach Media</span>`;
       mediaSection.appendChild(mediaTitle);
 
-      const mediaDesc = makeEl("div", "font-size:9.5px;color:#64748b;margin-bottom:8px;");
-      mediaDesc.textContent = "Upload PDF, Video, GIF, Image, or Doc to this image";
+      const mediaDesc = makeEl("div", "font-size:9.5px;color:#64748b;margin-bottom:6px;");
+      mediaDesc.textContent = "Upload Video, GIF, or Image to this image";
       mediaSection.appendChild(mediaDesc);
+
+      const sizingWrap = makeEl("div", "display:flex;align-items:center;justify-content:space-between;gap:6px;margin-bottom:8px;padding:0 2px;");
+      sizingWrap.innerHTML = `
+        <span style="font-size:9.5px;color:#475569;font-weight:600;">Sizing:</span>
+        <select id="os-overlay-media-sizing" style="font-size:9.5px;padding:2px 6px;border:1px solid #cbd5e1;border-radius:4px;background:#fff;color:#18181b;outline:none;cursor:pointer;">
+          <option value="contain" selected>Fit (Aspect Ratio)</option>
+          <option value="fill">Stretch (Full Image)</option>
+          <option value="cover">Crop (Fill Frame)</option>
+          <option value="none">Original (Center)</option>
+        </select>
+      `;
+      mediaSection.appendChild(sizingWrap);
 
       const fileInput = makeEl("input", "display:none;");
       fileInput.type = "file";
-      fileInput.accept = ".pdf,.doc,.docx,.txt,.md,.mp4,.webm,.gif,.png,.jpg,.jpeg,.webp";
+      fileInput.accept = ".mp4,.webm,.mov,.gif,.png,.jpg,.jpeg,.webp,.svg,.avif";
 
       const uploadBtn = makeEl("button", "width:100%;padding:6px 10px;background:#b8410e;color:#fff;border:none;border-radius:6px;font-size:10.5px;font-weight:600;cursor:pointer;transition:all 0.15s ease;display:flex;align-items:center;justify-content:center;gap:6px;");
       uploadBtn.innerHTML = `<span>+ Choose File to Attach</span>`;
@@ -481,37 +554,83 @@ const AssetOverlay = (() => {
         fileInput.click();
       };
 
+      function optimizeImageIfNeeded(inputFile) {
+        return new Promise((resolve) => {
+          // Keep video, gif, svg, or already small files (< 600KB) as-is
+          if (!inputFile.type.startsWith("image/") || inputFile.type.includes("gif") || inputFile.type.includes("svg") || inputFile.size < 600 * 1024) {
+            const reader = new FileReader();
+            reader.onload = (e) => resolve(e.target.result);
+            reader.onerror = () => resolve(null);
+            reader.readAsDataURL(inputFile);
+            return;
+          }
+
+          const tempImg = new Image();
+          const objectUrl = URL.createObjectURL(inputFile);
+          tempImg.onload = () => {
+            URL.revokeObjectURL(objectUrl);
+            const MAX_DIM = 1600;
+            let w = tempImg.naturalWidth || tempImg.width;
+            let h = tempImg.naturalHeight || tempImg.height;
+            if (w > MAX_DIM || h > MAX_DIM) {
+              if (w > h) {
+                h = Math.round((h * MAX_DIM) / w);
+                w = MAX_DIM;
+              } else {
+                w = Math.round((w * MAX_DIM) / h);
+                h = MAX_DIM;
+              }
+            }
+            const canvas = document.createElement("canvas");
+            canvas.width = w;
+            canvas.height = h;
+            const ctx = canvas.getContext("2d");
+            ctx.drawImage(tempImg, 0, 0, w, h);
+            const mime = inputFile.type === "image/png" ? "image/png" : "image/jpeg";
+            resolve(canvas.toDataURL(mime, 0.88));
+          };
+          tempImg.onerror = () => {
+            URL.revokeObjectURL(objectUrl);
+            const reader = new FileReader();
+            reader.onload = (e) => resolve(e.target.result);
+            reader.readAsDataURL(inputFile);
+          };
+          tempImg.src = objectUrl;
+        });
+      }
+
       fileInput.onchange = async (e) => {
         const file = e.target.files && e.target.files[0];
         if (!file) return;
         uploadBtn.disabled = true;
         uploadBtn.innerHTML = `<span>Uploading ${file.name.slice(0, 15)}...</span>`;
+        const sizingSelect = mediaSection.querySelector("#os-overlay-media-sizing");
+        const selectedSizing = sizingSelect ? sizingSelect.value : "contain";
 
         try {
-          const reader = new FileReader();
-          reader.onload = async (evt) => {
-            const dataUrl = evt.target.result;
-            const interaction = typeof createMediaInteraction === "function"
-              ? createMediaInteraction({
-                  name: file.name,
-                  fileDataUrl: dataUrl,
-                  fileName: file.name,
-                  mimeType: file.type
-                })
-              : {
-                  name: file.name,
-                  html: `<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.7);color:#fff;"><a href="${dataUrl}" target="_blank" style="color:#fff;font-size:14px;font-weight:bold;">📄 View ${file.name}</a></div>`,
-                  css: "",
-                  js: "function run(){ return { resize(){}, destroy(){} }; }"
-                };
+          const dataUrl = await optimizeImageIfNeeded(file);
+          if (!dataUrl) throw new Error("Could not read file");
 
-            await handleSelectInteraction(interaction);
-          };
-          reader.readAsDataURL(file);
+          const interaction = typeof createMediaInteraction === "function"
+            ? createMediaInteraction({
+                name: file.name,
+                fileDataUrl: dataUrl,
+                fileName: file.name,
+                mimeType: file.type,
+                sizingMode: selectedSizing
+              })
+            : {
+                name: file.name,
+                html: `<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:#09090b;color:#fff;"><a href="${dataUrl}" target="_blank" style="color:#fff;font-size:14px;font-weight:bold;">📄 View ${file.name}</a></div>`,
+                css: "",
+                js: "function run(){ return { resize(){}, destroy(){} }; }"
+              };
+
+          await handleSelectInteraction(interaction);
         } catch (err) {
           uploadBtn.disabled = false;
           uploadBtn.innerHTML = `<span>+ Choose File to Attach</span>`;
-          alert("Failed to read file: " + err.message);
+          alert("Failed to attach media: " + err.message);
         }
       };
 
@@ -587,6 +706,21 @@ const AssetOverlay = (() => {
         closeMenu();
       };
       listDiv.appendChild(createBtn);
+
+      const redesignBtn = makeEl("button", "margin-top:6px;width:100%;padding:8px 12px;background:#4f46e5;color:#ffffff;border:none;cursor:pointer;font-size:10.5px;font-weight:600;letter-spacing:0.02em;border-radius:6px;transition:all 0.15s ease;display:flex;align-items:center;justify-content:center;gap:6px;");
+      redesignBtn.innerHTML = `<span>🎨 Redesign Page / Background</span>`;
+      redesignBtn.onmouseenter = () => { redesignBtn.style.background = "#4338ca"; };
+      redesignBtn.onmouseleave = () => { redesignBtn.style.background = "#4f46e5"; };
+      redesignBtn.onclick = (e) => {
+        e.stopPropagation();
+        closeMenu();
+        if (typeof RedesignMode !== "undefined" && RedesignMode.startPicker) {
+          RedesignMode.startPicker((pickedEl) => {
+            RedesignMode.openEditorPanel(pickedEl);
+          });
+        }
+      };
+      listDiv.appendChild(redesignBtn);
 
       menuEl.appendChild(listDiv);
       document.body.appendChild(menuEl);

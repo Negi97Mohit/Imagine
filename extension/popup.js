@@ -344,6 +344,11 @@ function updateRedesignBadge(count) {
   }
 }
 
+let myUserId = null;
+chrome.runtime.sendMessage({ type: "GET_ANON_USER_ID" }, (res) => {
+  if (res && res.userId) myUserId = res.userId;
+});
+
 function loadPageRedesigns() {
   if (!redesignList) return;
   redesignList.innerHTML = `<div class="empty-state">Loading redesigns on this page…</div>`;
@@ -359,26 +364,30 @@ function loadPageRedesigns() {
     chrome.tabs.sendMessage(tabId, { type: "GET_PAGE_REDESIGNS" }, async (res) => {
       let items = [];
       let domain = "";
+      let hiddenIds = [];
       if (!chrome.runtime.lastError && res && res.items) {
         items = res.items;
         domain = res.domain;
+        hiddenIds = res.hiddenIds || [];
       } else {
         // Fallback to storage
         try {
           const url = new URL(tabsList[0].url);
-          domain = url.hostname;
+          domain = url.hostname.replace(/^www\./i, "").toLowerCase();
           const key = `redesigns_${domain}`;
           const store = await chrome.storage.local.get(key);
           items = Array.isArray(store[key]) ? store[key] : [];
+          const hiddenStore = await chrome.storage.local.get(`hiddenRedesigns_${domain}`);
+          hiddenIds = Array.isArray(hiddenStore[`hiddenRedesigns_${domain}`]) ? hiddenStore[`hiddenRedesigns_${domain}`] : [];
         } catch (e) {}
       }
 
-      renderRedesignList(items, domain, tabId);
+      renderRedesignList(items, domain, tabId, hiddenIds);
     });
   });
 }
 
-function renderRedesignList(items, domain, tabId) {
+function renderRedesignList(items, domain, tabId, hiddenIds = []) {
   if (!redesignList) return;
   redesignList.innerHTML = "";
   updateRedesignBadge(items ? items.length : 0);
@@ -398,13 +407,39 @@ function renderRedesignList(items, domain, tabId) {
     const card = document.createElement("div");
     card.className = "redesign-item-card";
 
+    const pid = item.pushId || item.id || item.selector;
+    const isHidden = Boolean(hiddenIds && hiddenIds.includes(pid));
+    const isMine = Boolean(myUserId && item.createdBy === myUserId);
+
+    if (isHidden) {
+      card.style.opacity = "0.6";
+      card.style.borderColor = "var(--border)";
+    }
+
     const header = document.createElement("div");
     header.className = "redesign-item-header";
+
+    const titleWrap = document.createElement("div");
+    titleWrap.style.cssText = "display:flex;align-items:center;gap:6px;min-width:0;";
 
     const title = document.createElement("div");
     title.className = "redesign-item-title";
     title.textContent = item.name || "Element redesign";
-    header.appendChild(title);
+    titleWrap.appendChild(title);
+
+    if (item.scope === "single") {
+      const scopeBadge = document.createElement("span");
+      scopeBadge.style.cssText = "font-size:8.5px;padding:1px 5px;background:rgba(16,185,129,0.12);color:#10b981;border-radius:3px;font-weight:700;flex-shrink:0;";
+      scopeBadge.textContent = "1 element";
+      titleWrap.appendChild(scopeBadge);
+    } else {
+      const scopeBadge = document.createElement("span");
+      scopeBadge.style.cssText = "font-size:8.5px;padding:1px 5px;background:rgba(99,102,241,0.12);color:#6366f1;border-radius:3px;font-weight:700;flex-shrink:0;";
+      scopeBadge.textContent = "All matching";
+      titleWrap.appendChild(scopeBadge);
+    }
+
+    header.appendChild(titleWrap);
 
     // Switch for individual toggle
     const switchLabel = document.createElement("label");
@@ -412,7 +447,8 @@ function renderRedesignList(items, domain, tabId) {
     switchLabel.title = "Toggle this redesign on/off";
     const switchInput = document.createElement("input");
     switchInput.type = "checkbox";
-    switchInput.checked = item.enabled !== false;
+    switchInput.checked = item.enabled !== false && !isHidden;
+    if (isHidden) switchInput.disabled = true;
     const switchSlider = document.createElement("span");
     switchSlider.className = "slider";
     switchLabel.appendChild(switchInput);
@@ -422,7 +458,7 @@ function renderRedesignList(items, domain, tabId) {
       const enabled = switchInput.checked;
       chrome.tabs.sendMessage(tabId, {
         type: "TOGGLE_PAGE_REDESIGN",
-        id: item.id || item.pushId || item.selector,
+        id: pid,
         enabled,
       });
     });
@@ -430,59 +466,88 @@ function renderRedesignList(items, domain, tabId) {
     header.appendChild(switchLabel);
     card.appendChild(header);
 
-    const sel = document.createElement("div");
-    sel.className = "redesign-item-selector";
-    sel.textContent = item.selector;
-    card.appendChild(sel);
-
     const footer = document.createElement("div");
     footer.className = "redesign-item-footer";
 
-    const dateStr = item.updatedAt ? new Date(item.updatedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "Active";
     const info = document.createElement("span");
     info.style.cssText = "font-size:9.5px;color:var(--muted);";
-    info.textContent = dateStr;
+    if (isHidden) {
+      info.textContent = "🙈 Hidden on your browser";
+      info.style.color = "#a1a1aa";
+    } else if (isMine) {
+      info.textContent = "👤 Created by you";
+      info.style.color = "#10b981";
+    } else {
+      info.textContent = "🌐 Shared redesign";
+    }
     footer.appendChild(info);
 
     const actions = document.createElement("div");
     actions.className = "redesign-item-actions";
 
-    const editBtn = document.createElement("button");
-    editBtn.className = "action-btn-sm";
-    editBtn.textContent = "Edit ✏️";
-    editBtn.addEventListener("click", () => {
-      chrome.tabs.sendMessage(
-        tabId,
-        {
-          type: "EDIT_PAGE_REDESIGN",
-          id: item.id || item.pushId || item.selector,
-        },
-        () => {
-          window.close();
-        }
-      );
-    });
-    actions.appendChild(editBtn);
+    if (isMine) {
+      // Creator: Can Edit and Delete for everyone
+      const editBtn = document.createElement("button");
+      editBtn.className = "action-btn-sm";
+      editBtn.textContent = "Edit ✏️";
+      editBtn.addEventListener("click", () => {
+        chrome.tabs.sendMessage(
+          tabId,
+          {
+            type: "EDIT_PAGE_REDESIGN",
+            id: pid,
+          },
+          () => {
+            window.close();
+          }
+        );
+      });
+      actions.appendChild(editBtn);
 
-    const delBtn = document.createElement("button");
-    delBtn.className = "action-btn-sm danger";
-    delBtn.textContent = "Delete ✕";
-    delBtn.addEventListener("click", () => {
-      delBtn.disabled = true;
-      delBtn.textContent = "…";
-      chrome.tabs.sendMessage(
-        tabId,
-        {
-          type: "DELETE_PAGE_REDESIGN",
-          id: item.id || item.pushId || item.selector,
-        },
-        () => {
-          card.remove();
-          loadPageRedesigns();
-        }
-      );
-    });
-    actions.appendChild(delBtn);
+      const delBtn = document.createElement("button");
+      delBtn.className = "action-btn-sm danger";
+      delBtn.textContent = "Delete ✕";
+      delBtn.title = "Delete this redesign permanently for all users";
+      delBtn.addEventListener("click", () => {
+        if (!confirm(`Delete redesign "${item.name || "Element redesign"}"?\n\nThis will remove it permanently for all users.`)) return;
+        delBtn.disabled = true;
+        delBtn.textContent = "…";
+        chrome.tabs.sendMessage(
+          tabId,
+          {
+            type: "DELETE_PAGE_REDESIGN",
+            id: pid,
+          },
+          () => {
+            card.remove();
+            loadPageRedesigns();
+          }
+        );
+      });
+      actions.appendChild(delBtn);
+    } else {
+      // Other users: CANNOT delete or edit. They can only Hide or Unhide on their screen
+      const hideBtn = document.createElement("button");
+      hideBtn.className = "action-btn-sm";
+      hideBtn.textContent = isHidden ? "Unhide 👁️" : "Hide 👁️";
+      hideBtn.title = isHidden ? "Show this redesign on your screen" : "Hide this redesign on your screen (other users will still see it)";
+      hideBtn.addEventListener("click", () => {
+        hideBtn.disabled = true;
+        hideBtn.textContent = "…";
+        chrome.tabs.sendMessage(
+          tabId,
+          {
+            type: "HIDE_PAGE_REDESIGN",
+            id: pid,
+            hidden: !isHidden,
+          },
+          () => {
+            loadPageRedesigns();
+          }
+        );
+      });
+      actions.appendChild(hideBtn);
+    }
 
     footer.appendChild(actions);
     card.appendChild(footer);

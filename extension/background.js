@@ -107,12 +107,61 @@ const PRESETS_COLLECTION = "redesign_presets";
 let _presetsCache = null;
 let _presetsCacheTime = 0;
 const PRESETS_CACHE_TTL = 10000; // 10 seconds memory TTL
+let _presetsSeeded = false;
+
+async function seedPresetsToFirestore() {
+  if (_presetsSeeded) return;
+  _presetsSeeded = true;
+  try {
+    const url = chrome.runtime.getURL("modules/redesign-presets.json");
+    const res = await fetch(url);
+    if (res.ok) {
+      const presets = await res.json();
+      if (Array.isArray(presets)) {
+        for (const p of presets) {
+          if (p && p.id && p.name) {
+            const body = jsDocToFirestoreDoc({
+              ...p,
+              isBuiltIn: true,
+              updatedAt: new Date().toISOString(),
+            });
+            // 1. Push to Firestore redesign_presets
+            fetch(`${FIRESTORE_BASE}/${PRESETS_COLLECTION}/${encodeURIComponent(p.id)}`, {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(body),
+            }).catch(() => {});
+
+            // 2. Also push to Firestore community_presets
+            fetch(`${FIRESTORE_BASE}/community_presets/${encodeURIComponent(p.id)}`, {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(body),
+            }).catch(() => {});
+
+            // 3. Also push to RTDB presets
+            fetch(`${RTDB_URL.replace(/\/$/, "")}/presets/${encodeURIComponent(p.id)}.json`, {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ ...p, isBuiltIn: true }),
+            }).catch(() => {});
+          }
+        }
+      }
+    }
+  } catch (e) {
+    console.warn("[locked-image] seedPresetsToFirestore error:", e);
+  }
+}
 
 async function listCommunityPresets() {
   const now = Date.now();
   if (_presetsCache && now - _presetsCacheTime < PRESETS_CACHE_TTL) {
     return { ok: true, items: _presetsCache, fromCache: true };
   }
+
+  // Ensure built-in seed presets are pushed to Firestore
+  seedPresetsToFirestore();
 
   // 1. Try fetching from Firestore REST API
   try {
@@ -125,24 +174,33 @@ async function listCommunityPresets() {
         .map(firestoreDocToJsDoc)
         .filter((item) => item && item.id && item.name);
 
-      _presetsCache = items;
-      _presetsCacheTime = now;
-
-      // Save to chrome.storage.local for offline availability
-      await chrome.storage.local.set({ communityPresetsCache: items, communityPresetsCacheTime: now });
-      return { ok: true, items, fromCache: false };
+      if (items.length > 0) {
+        _presetsCache = items;
+        _presetsCacheTime = now;
+        await chrome.storage.local.set({ communityPresetsCache: items, communityPresetsCacheTime: now });
+        return { ok: true, items, fromCache: false };
+      }
     }
   } catch (e) {
     console.warn("[locked-image] Firestore listCommunityPresets error (fallback to local cache):", e);
   }
 
-  // 2. Offline fallback to local chrome storage cache
+  // 2. Offline fallback to local chrome storage cache or bundled JSON
   try {
     const { communityPresetsCache = [] } = await chrome.storage.local.get("communityPresetsCache");
     if (Array.isArray(communityPresetsCache) && communityPresetsCache.length) {
       _presetsCache = communityPresetsCache;
       _presetsCacheTime = now;
       return { ok: true, items: communityPresetsCache, fromCache: true, offline: true };
+    }
+  } catch (e) {}
+
+  // 3. Fallback to bundled seed presets
+  try {
+    const res = await fetch(chrome.runtime.getURL("modules/redesign-presets.json"));
+    if (res.ok) {
+      const items = await res.json();
+      return { ok: true, items, fromCache: true, offline: true };
     }
   } catch (e) {}
 
@@ -242,18 +300,45 @@ async function deleteCommunityPreset(presetId) {
 }
 
 // ============================================================================
-// RTDB: SHARED PAGE REDESIGNS BY DOMAIN
+// RTDB & FIRESTORE: SHARED PAGE REDESIGNS BY DOMAIN
 // ============================================================================
 
+const DOMAIN_REDESIGNS_COLLECTION = "domain_redesigns";
+
+function safeDomainKey(domain) {
+  if (!domain) return "default";
+  return String(domain).replace(/^www\./i, "").toLowerCase().replace(/[^a-z0-9_-]/g, "_");
+}
+
 function rtdbRedesignUrl(domain, pushId) {
-  const base = `${RTDB_URL.replace(/\/$/, "")}/redesigns/${encodeURIComponent(domain)}`;
+  const sDomain = safeDomainKey(domain);
+  const base = `${RTDB_URL.replace(/\/$/, "")}/redesigns/${sDomain}`;
   return pushId ? `${base}/${encodeURIComponent(pushId)}.json` : `${base}.json`;
+}
+
+function broadcastRedesignChanged(domain, entry) {
+  chrome.tabs.query({}, (tabs) => {
+    for (const tab of tabs) {
+      if (tab.id == null) continue;
+      chrome.tabs.sendMessage(
+        tab.id,
+        { type: "REDESIGN_CHANGED", domain, entry },
+        () => void chrome.runtime.lastError
+      );
+    }
+  });
 }
 
 async function saveRedesign(domain, entry) {
   if (!domain || !entry || !entry.selector) return { ok: false, message: "Invalid redesign payload" };
+  const sDomain = safeDomainKey(domain);
   const userId = await getAnonUserId();
+  const pushId = entry.pushId || entry.id || "rd_" + Date.now().toString(36);
   const payload = {
+    id: pushId,
+    pushId: pushId,
+    domain: sDomain,
+    rawDomain: String(domain).replace(/^www\./i, "").toLowerCase(),
     selector: entry.selector,
     name: entry.name || "Untitled redesign",
     styles: entry.styles && typeof entry.styles === "object" ? entry.styles : {},
@@ -261,60 +346,133 @@ async function saveRedesign(domain, entry) {
     html: entry.html || "",
     engineId: entry.engineId || null,
     scope: entry.scope || "page",
-    visibility: entry.visibility === "shared" ? "shared" : "private",
+    visibility: "shared",
     createdBy: userId,
     createdAt: entry.createdAt || new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   };
 
+  // 1. Persist to Firebase RTDB
   try {
-    const res = await fetch(rtdbRedesignUrl(domain), {
-      method: "POST",
+    const res = await fetch(rtdbRedesignUrl(sDomain, pushId), {
+      method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
-    if (res.ok) {
-      const data = await res.json();
-      return { ok: true, pushId: data.name, item: { ...payload, pushId: data.name, id: data.name } };
+    if (!res.ok) {
+      console.warn("[locked-image] RTDB saveRedesign status:", res.status);
     }
   } catch (e) {
-    console.warn("[locked-image] redesign save failed:", e);
+    console.warn("[locked-image] RTDB redesign save failed:", e);
   }
-  return { ok: false };
+
+  // 2. Automatically push redesign to Firestore collection domain_redesigns
+  try {
+    const firestoreDocId = `${sDomain}__${pushId}`;
+    const firestoreUrl = `${FIRESTORE_BASE}/${DOMAIN_REDESIGNS_COLLECTION}/${encodeURIComponent(firestoreDocId)}`;
+    const body = jsDocToFirestoreDoc(payload);
+    await fetch(firestoreUrl, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  } catch (e) {
+    console.warn("[locked-image] Firestore domain_redesigns save error:", e);
+  }
+
+  // Broadcast real-time change to all tabs with this domain
+  broadcastRedesignChanged(domain, payload);
+
+  return { ok: true, pushId, item: payload };
 }
 
 async function listRedesignsForDomain(domain) {
   if (!domain) return { ok: true, items: [] };
+  const sDomain = safeDomainKey(domain);
+  const normDomain = String(domain).replace(/^www\./i, "").toLowerCase();
+  const resultMap = new Map();
+
+  // 1. Fetch from RTDB
   try {
-    const res = await fetch(rtdbRedesignUrl(domain), { cache: "no-store" });
+    const res = await fetch(rtdbRedesignUrl(sDomain), { cache: "no-store" });
     if (res.ok) {
       const data = await res.json();
       if (data && typeof data === "object") {
-        return {
-          ok: true,
-          items: Object.entries(data).map(([pushId, v]) => ({
-            ...v,
-            pushId,
-            id: pushId,
-          })),
-        };
+        Object.entries(data).forEach(([pushId, v]) => {
+          if (v && typeof v === "object" && v.selector) {
+            resultMap.set(pushId, { ...v, pushId, id: pushId });
+          }
+        });
       }
     }
   } catch (e) {
-    console.warn("[locked-image] redesign list failed:", e);
+    console.warn("[locked-image] redesign RTDB list failed:", e);
   }
-  return { ok: true, items: [] };
+
+  // 2. Fetch from Firestore domain_redesigns
+  try {
+    const url = `${FIRESTORE_BASE}/${DOMAIN_REDESIGNS_COLLECTION}?pageSize=100`;
+    const res = await fetch(url, { cache: "no-store" });
+    if (res.ok) {
+      const data = await res.json();
+      const docs = data.documents || [];
+      docs.map(firestoreDocToJsDoc).forEach((item) => {
+        if (item && item.pushId && (item.domain === sDomain || item.rawDomain === normDomain || item.domain === normDomain)) {
+          if (!resultMap.has(item.pushId)) {
+            resultMap.set(item.pushId, item);
+          }
+        }
+      });
+    }
+  } catch (e) {}
+
+  const items = Array.from(resultMap.values());
+  return { ok: true, items };
 }
 
-async function deleteRedesign(domain, pushId) {
+function broadcastRedesignDeleted(domain, pushId) {
+  chrome.tabs.query({}, (tabs) => {
+    for (const tab of tabs) {
+      if (tab.id == null) continue;
+      chrome.tabs.sendMessage(
+        tab.id,
+        { type: "REDESIGN_DELETED", domain, pushId },
+        () => void chrome.runtime.lastError
+      );
+    }
+  });
+}
+
+async function deleteRedesign(domain, pushId, requestUserId) {
   if (!domain || !pushId) return { ok: false };
+  const sDomain = safeDomainKey(domain);
+  const userId = requestUserId || await getAnonUserId();
+
+  // Verify creator ownership before deleting from cloud database
   try {
-    await fetch(rtdbRedesignUrl(domain, pushId), { method: "DELETE" });
-    return { ok: true };
+    const res = await fetch(rtdbRedesignUrl(sDomain, pushId), { cache: "no-store" });
+    if (res.ok) {
+      const existing = await res.json();
+      if (existing && existing.createdBy && existing.createdBy !== userId) {
+        return { ok: false, message: "Only the creator of this redesign can delete it." };
+      }
+    }
+  } catch (e) {}
+
+  try {
+    await fetch(rtdbRedesignUrl(sDomain, pushId), { method: "DELETE" });
   } catch (e) {
-    console.warn("[locked-image] redesign delete failed:", e);
+    console.warn("[locked-image] redesign RTDB delete failed:", e);
   }
-  return { ok: false };
+
+  try {
+    const firestoreDocId = `${sDomain}__${pushId}`;
+    const firestoreUrl = `${FIRESTORE_BASE}/${DOMAIN_REDESIGNS_COLLECTION}/${encodeURIComponent(firestoreDocId)}`;
+    await fetch(firestoreUrl, { method: "DELETE" });
+  } catch (e) {}
+
+  broadcastRedesignDeleted(domain, pushId);
+  return { ok: true };
 }
 
 async function setRedesignConsent(domain, pushId, decision) {
@@ -481,7 +639,36 @@ async function lookupBindingsByAsset(assetId) {
     console.warn("[locked-image] RTDB lookup failed:", e);
   }
 
-  // Local cache fallback
+  // 2. Try Firestore fallback
+  try {
+    const firestoreUrl = `${FIRESTORE_BASE}/asset_bindings?pageSize=100`;
+    const res = await fetch(firestoreUrl, { cache: "no-store" });
+    if (res.ok) {
+      const data = await res.json();
+      const docs = data.documents || [];
+      const bindings = [];
+      docs.map(firestoreDocToJsDoc).forEach((item) => {
+        if (item && (item.assetId === canonicalId || item.assetId === assetId) && item.interaction) {
+          bindings.push({
+            pushId: item.pushId,
+            interaction: item.interaction,
+            imageUrl: item.imageUrl || "",
+            createdBy: item.createdBy || "unknown",
+            updatedAt: item.boundAt || item.updatedAt || "",
+          });
+        }
+      });
+      if (bindings.length) {
+        await chrome.storage.local.set({
+          [`bindingCache:${assetId}`]: bindings,
+          [`bindingCache:${canonicalId}`]: bindings,
+        });
+        return { found: true, bindings, canonicalAssetId: canonicalId };
+      }
+    }
+  } catch (e) {}
+
+  // 3. Local cache fallback
   try {
     const local = await chrome.storage.local.get(`bindingCache:${assetId}`);
     const cached = local[`bindingCache:${assetId}`];
@@ -556,6 +743,25 @@ async function saveBindingByAsset(assetId, imageUrl, interaction) {
 
   if (!pushId) pushId = userExisting ? userExisting.pushId : "local_" + crypto.randomUUID();
 
+  // Automatically push asset binding to Firestore collection 'asset_bindings'
+  try {
+    const firestoreBindingId = `${canonicalId}__${pushId}`;
+    const firestoreUrl = `${FIRESTORE_BASE}/asset_bindings/${encodeURIComponent(firestoreBindingId)}`;
+    const body = jsDocToFirestoreDoc({
+      assetId: canonicalId,
+      pushId,
+      imageUrl: imageUrl || "",
+      interaction,
+      createdBy: userId,
+      boundAt: new Date().toISOString(),
+    });
+    fetch(firestoreUrl, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }).catch(() => {});
+  } catch (e) {}
+
   _allBindingsCacheTime = 0;
 
   const otherBindings = existingList.filter((b) => b.createdBy !== userId && b.pushId !== pushId);
@@ -592,6 +798,11 @@ async function deleteBindingByAsset(assetId, pushId) {
         await fetch(rtdbBindingUrl(assetId, pushId), { method: "DELETE" });
       } catch (e) {}
     }
+    try {
+      const firestoreBindingId = `${canonicalId}__${pushId}`;
+      const firestoreUrl = `${FIRESTORE_BASE}/asset_bindings/${encodeURIComponent(firestoreBindingId)}`;
+      await fetch(firestoreUrl, { method: "DELETE" });
+    } catch (e) {}
   } else {
     try {
       await fetch(rtdbBindingUrl(canonicalId), { method: "DELETE" });
@@ -634,11 +845,15 @@ async function fetchImageDataUrl(url) {
 
 // Global Gallery
 async function publishInteraction(interaction) {
+  const userId = await getAnonUserId();
+  const pushId = interaction.id || "interaction_" + crypto.randomUUID();
   const payload = {
+    id: pushId,
     name: interaction.name || "Untitled",
     html: interaction.html || "",
     css: interaction.css || "",
     js: interaction.js || "",
+    createdBy: userId,
     createdAt: new Date().toISOString(),
   };
 
@@ -650,11 +865,22 @@ async function publishInteraction(interaction) {
     });
     if (res.ok) {
       const data = await res.json();
-      return { ok: true, id: data.name };
+      payload.id = data.name;
     }
   } catch (e) {}
 
-  return { ok: false };
+  // Push interaction to Firestore collection 'interactions'
+  try {
+    const firestoreUrl = `${FIRESTORE_BASE}/interactions/${encodeURIComponent(payload.id)}`;
+    const body = jsDocToFirestoreDoc(payload);
+    await fetch(firestoreUrl, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  } catch (e) {}
+
+  return { ok: true, id: payload.id };
 }
 
 async function listGlobalInteractions() {
@@ -776,7 +1002,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
   if (msg.type === "DELETE_REDESIGN") {
-    deleteRedesign(msg.domain, msg.pushId).then(sendResponse);
+    getAnonUserId().then((userId) => {
+      deleteRedesign(msg.domain, msg.pushId, userId).then(sendResponse);
+    });
     return true;
   }
   if (msg.type === "SET_REDESIGN_CONSENT") {
@@ -806,4 +1034,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
 });
+
+// Auto-seed presets directly to Firestore and RTDB on extension install / startup
+chrome.runtime.onInstalled.addListener(() => {
+  seedPresetsToFirestore();
+});
+seedPresetsToFirestore();
 

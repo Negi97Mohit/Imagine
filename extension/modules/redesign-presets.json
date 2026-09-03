@@ -214,5 +214,125 @@
     "cssText": "font-family: monospace !important; color: #00ff66 !important;",
     "html": "",
     "js": ""
+  },
+  {
+    "id": "zen-coffee-cortado",
+    "name": "☕ Café Cortado (Minimalist)",
+    "category": "background",
+    "theme": "Zen & Minimal",
+    "description": "Warm roasted espresso tones with steamed oat milk ambient gradients and refined typography.",
+    "styles": {
+      "backgroundColor": "#14100c",
+      "backgroundImage": "radial-gradient(ellipse at 80% 20%, rgba(199, 143, 98, 0.22) 0%, transparent 60%), radial-gradient(ellipse at 20% 80%, rgba(120, 80, 50, 0.25) 0%, transparent 70%)",
+      "color": "#f5ece4"
+    },
+    "cssText": "background-color: #14100c !important; background-image: radial-gradient(ellipse at 80% 20%, rgba(199,143,98,0.22) 0%, transparent 60%), radial-gradient(ellipse at 20% 80%, rgba(120,80,50,0.25) 0%, transparent 70%) !important; color: #f5ece4 !important;",
+    "html": "",
+    "js": ""
+  },
+  {
+    "id": "zen-coffee-steam-live",
+    "name": "♨️ Steam & Roast (Live Canvas)",
+    "category": "background",
+    "theme": "Zen & Minimal",
+    "description": "Interactive rising warm steam particles and ambient espresso embers curling around the cursor.",
+    "engineId": "coffee-steam",
+    "styles": {
+      "backgroundColor": "#120f0c",
+      "color": "#fbf6f0"
+    },
+    "cssText": "background-color: #120f0c !important; color: #fbf6f0 !important;",
+    "html": "",
+    "js": ""
+  },
+  {
+    "id": "zen-panda-ink",
+    "name": "🐼 Bamboo Mist & Sumi-e",
+    "category": "background",
+    "theme": "Zen & Minimal",
+    "description": "Tranquil Japanese sumi-e monochrome ink atmosphere with delicate misty sage gradients.",
+    "styles": {
+      "backgroundColor": "#0d0f0e",
+      "backgroundImage": "radial-gradient(circle at 50% 0%, rgba(74, 102, 85, 0.18) 0%, transparent 70%), linear-gradient(180deg, rgba(13,15,14,0) 0%, #0d0f0e 100%)",
+      "color": "#e8ede9"
+    },
+    "cssText": "background-color: #0d0f0e !important; background-image: radial-gradient(circle at 50% 0%, rgba(74,102,85,0.18) 0%, transparent 70%), linear-gradient(180deg, rgba(13,15,14,0) 0%, #0d0f0e 100%) !important; color: #e8ede9 !important;",
+    "html": "",
+    "js": ""
+  },
+  {
+    "id": "zen-bamboo-forest-live",
+    "name": "🎋 Zen Bamboo Forest (Live Canvas)",
+    "category": "background",
+    "theme": "Zen & Minimal",
+    "description": "Interactive tranquil bamboo petal drifts that gently scatter and ripple in response to mouse paths.",
+    "engineId": "zen-mist",
+    "styles": {
+      "backgroundColor": "#0d0f0e",
+      "color": "#e8ede9"
+    },
+    "cssText": "background-color: #0d0f0e !important; color: #e8ede9 !important;",
+    "html": "",
+    "js": ""
+  },
+  {
+    "id": "zen-boba-taro",
+    "name": "🧋 Taro Milk Float (Minimal)",
+    "category": "background",
+    "theme": "Zen & Minimal",
+    "description": "Soft milky lavender and warm brown sugar pearl ambient gradients with serene pastel warmth.",
+    "styles": {
+      "backgroundColor": "#131019",
+      "backgroundImage": "radial-gradient(circle at 25% 35%, rgba(184, 150, 220, 0.18) 0%, transparent 55%), radial-gradient(circle at 75% 70%, rgba(190, 130, 90, 0.15) 0%, transparent 60%)",
+      "color": "#f3eff8"
+    },
+    "cssText": "background-color: #131019 !important; background-image: radial-gradient(circle at 25% 35%, rgba(184,150,220,0.18) 0%, transparent 55%), radial-gradient(circle at 75% 70%, rgba(190,130,90,0.15) 0%, transparent 60%) !important; color: #f3eff8 !important;",
+    "html": "",
+    "js": ""
+  },
+  {
+    "id": "zen-boba-pearls-live",
+    "name": "🧋 Bubbling Boba Pearls (Live Canvas)",
+    "category": "background",
+    "theme": "Zen & Minimal",
+    "description": "Interactive floating translucent tapioca boba pearls with fluid buoyancy that bounce away from the cursor.",
+    "engineId": "boba-pearls",
+    "styles": {
+      "backgroundColor": "#131019",
+      "color": "#f3eff8"
+    },
+    "cssText": "background-color: #131019 !important; color: #f3eff8 !important;",
+    "html": "",
+    "js": ""
+  },
+  {
+    "id": "editorial-fashion-vogue",
+    "name": "📰 Editorial Atelier No. 7",
+    "category": "background",
+    "theme": "Fashion & Editorial",
+    "description": "High-contrast chic editorial layout with crisp hairline borders, Didot typography, and monospaced accents.",
+    "styles": {
+      "backgroundColor": "#09090b",
+      "backgroundImage": "linear-gradient(to right, rgba(255,255,255,0.035) 1px, transparent 1px)",
+      "color": "#f4f4f5"
+    },
+    "cssText": "background-color: #09090b !important; background-size: 72px 72px !important; background-image: linear-gradient(to right, rgba(255,255,255,0.035) 1px, transparent 1px) !important; color: #f4f4f5 !important;",
+    "html": "",
+    "js": ""
+  },
+  {
+    "id": "arch-blueprint-bauhaus",
+    "name": "🏛️ Blueprint Bauhaus (Live Canvas)",
+    "category": "background",
+    "theme": "Architectural",
+    "description": "Architectural blueprint slate with live structural precision isometric grid and coordinate crosshairs.",
+    "engineId": "architectural-blueprint",
+    "styles": {
+      "backgroundColor": "#0c1017",
+      "color": "#e6edf3"
+    },
+    "cssText": "background-color: #0c1017 !important; color: #e6edf3 !important;",
+    "html": "",
+    "js": ""
   }
 ]

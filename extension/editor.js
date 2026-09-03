@@ -5,7 +5,6 @@ const jsCode = document.getElementById("jsCode");
 const previewImg = document.getElementById("previewImg");
 const previewFrame = document.getElementById("previewFrame");
 const runPreviewBtn = document.getElementById("runPreview");
-const saveLocalBtn = document.getElementById("saveLocal");
 const deleteLocalBtn = document.getElementById("deleteLocal");
 const publishBtn = document.getElementById("publish");
 const status = document.getElementById("status");
@@ -62,7 +61,6 @@ if (templatePresetSelect) {
     let tmpl = typeof STARTER_TEMPLATE !== "undefined" ? STARTER_TEMPLATE : { html: "", css: "", js: "" };
     if (typeof MEDIA_TEMPLATES !== "undefined") {
       if (val === "video") tmpl = MEDIA_TEMPLATES.VIDEO;
-      else if (val === "document") tmpl = MEDIA_TEMPLATES.DOCUMENT;
       else if (val === "image_gif") tmpl = MEDIA_TEMPLATES.IMAGE_GIF;
     }
     if (confirm(`Switch to "${tmpl.name}" preset? Any unsaved code in the editor will be replaced.`)) {
@@ -386,9 +384,10 @@ runPreviewBtn.addEventListener("click", () => {
   if (previewPaused) setPreviewPaused(false);
   frameReady = false;
   previewFrame.src = chrome.runtime.getURL("sandbox.html");
-});
-saveLocalBtn.addEventListener("click", async () => {
+publishBtn.addEventListener("click", async () => {
   const interaction = currentInteraction();
+  setStatus("Saving & publishing…");
+
   const { myInteractions = [] } = await chrome.storage.local.get("myInteractions");
   if (editingLocalId) {
     const idx = myInteractions.findIndex((i) => i.id === editingLocalId);
@@ -404,8 +403,6 @@ saveLocalBtn.addEventListener("click", async () => {
       ...interaction,
       createdAt: new Date().toISOString(),
     });
-    // Now that this has an id, keep the URL (and future saves) pointed at
-    // it instead of silently creating duplicates on repeated "Save locally".
     const next = new URLSearchParams(location.search);
     next.set("localId", editingLocalId);
     history.replaceState(null, "", "editor.html?" + next.toString());
@@ -414,8 +411,18 @@ saveLocalBtn.addEventListener("click", async () => {
   }
   await chrome.storage.local.set({ myInteractions });
   savedSnapshot = snapshot();
-  setStatus(`Saved "${interaction.name}" to your local library. You can close this tab and bind it from the popup.`);
   renderLibrary();
+
+  chrome.runtime.sendMessage(
+    { type: "PUBLISH_INTERACTION", interaction: { ...interaction, id: editingLocalId } },
+    (res) => {
+      setStatus(
+        res && res.ok
+          ? `Saved & Published "${interaction.name}" to cloud!`
+          : `Saved "${interaction.name}" (cloud sync will retry when online).`
+      );
+    }
+  );
 });
 
 deleteLocalBtn.addEventListener("click", async () => {
@@ -427,18 +434,6 @@ deleteLocalBtn.addEventListener("click", async () => {
     myInteractions: myInteractions.filter((i) => i.id !== editingLocalId),
   });
   goToEditor(null, true);
-});
-
-publishBtn.addEventListener("click", () => {
-  const interaction = currentInteraction();
-  setStatus("Publishing…");
-  chrome.runtime.sendMessage({ type: "PUBLISH_INTERACTION", interaction }, (res) => {
-    setStatus(
-      res && res.ok
-        ? `Published "${interaction.name}" — anyone with this extension can now find it in the global gallery.`
-        : "Failed to publish interaction — check your network connection."
-    );
-  });
 });
 
 init().then(() => {

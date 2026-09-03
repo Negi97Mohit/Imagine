@@ -55,6 +55,8 @@ const InteractiveBackgrounds = (() => {
         position: el.style.position || "",
         isolation: el.style.isolation || "",
         zIndex: el.style.zIndex || "",
+        backgroundColor: el.style.backgroundColor || "",
+        backgroundImage: el.style.backgroundImage || "",
       });
     }
 
@@ -70,11 +72,10 @@ const InteractiveBackgrounds = (() => {
       if (compPos === "static") {
         el.style.position = "relative";
       }
-      // Create isolated stacking context so z-index: -1 canvas sits behind child content without breaking layout
       el.style.isolation = "isolate";
+      el.style.setProperty("background-color", "transparent", "important");
+      el.style.setProperty("background-image", "none", "important");
 
-      // Non-destructive: canvas is positioned behind all children with z-index: -1 and pointer-events: none
-      // Never overwrite el.style.overflow or mutate children elements' styles!
       canvas.style.cssText = "position:absolute;inset:0;width:100%;height:100%;z-index:-1;pointer-events:none;display:block;border-radius:inherit;";
       el.prepend(canvas);
     }
@@ -1430,6 +1431,491 @@ const InteractiveBackgrounds = (() => {
           canvas.remove();
         }
       };
+    },
+
+    // 13. Zen Coffee / Steam (Rising warm ambient steam trails & espresso glow)
+    "coffee-steam": (el) => {
+      const { canvas, isFullPage } = prepareTarget(el);
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
+      const { mouse, cleanup: cleanupMouse } = setupMouseTracking(el, isFullPage);
+
+      let width = 0, height = 0;
+      let particles = [];
+      let embers = [];
+      const COUNT = 40;
+      const EMBER_COUNT = 24;
+
+      function resetParticle(p, fullReset = false) {
+        p.x = Math.random() * width;
+        p.y = fullReset ? Math.random() * height : height + 30;
+        p.vx = (Math.random() - 0.5) * 0.5;
+        p.vy = -(0.8 + Math.random() * 1.2);
+        p.size = 20 + Math.random() * 45;
+        p.alpha = 0.2 + Math.random() * 0.45;
+        p.wobble = Math.random() * Math.PI * 2;
+        p.wobbleSpeed = 0.02 + Math.random() * 0.03;
+      }
+
+      function resetEmber(e, fullReset = false) {
+        e.x = Math.random() * width;
+        e.y = fullReset ? Math.random() * height : height + 10;
+        e.size = 2 + Math.random() * 3.5;
+        e.vy = -(0.9 + Math.random() * 1.5);
+        e.vx = (Math.random() - 0.5) * 0.8;
+        e.alpha = 0.4 + Math.random() * 0.5;
+      }
+
+      function resize() {
+        const rect = isFullPage ? { width: window.innerWidth, height: window.innerHeight } : el.getBoundingClientRect();
+        width = Math.max(1, Math.round(rect.width));
+        height = Math.max(1, Math.round(rect.height));
+        if (canvas.width !== width || canvas.height !== height) {
+          canvas.width = width;
+          canvas.height = height;
+        }
+        particles = [];
+        for (let i = 0; i < COUNT; i++) {
+          const p = {};
+          resetParticle(p, true);
+          particles.push(p);
+        }
+        embers = [];
+        for (let i = 0; i < EMBER_COUNT; i++) {
+          const e = {};
+          resetEmber(e, true);
+          embers.push(e);
+        }
+      }
+      resize();
+
+      const ro = (typeof ResizeObserver !== "undefined" && !isFullPage) ? new ResizeObserver(resize) : null;
+      if (ro) ro.observe(el);
+      window.addEventListener("resize", resize);
+
+      let animId = null;
+      function animate() {
+        if (!canvas.isConnected) {
+          if (ro) ro.disconnect();
+          window.removeEventListener("resize", resize);
+          cleanupMouse();
+          return;
+        }
+
+        // Solid warm espresso background
+        ctx.fillStyle = "#14100c";
+        ctx.fillRect(0, 0, width, height);
+
+        // Soft ambient warm glow in center
+        const amb = ctx.createRadialGradient(width * 0.5, height * 0.7, 10, width * 0.5, height * 0.7, width * 0.7);
+        amb.addColorStop(0, "rgba(180, 110, 50, 0.18)");
+        amb.addColorStop(1, "rgba(20, 16, 12, 0)");
+        ctx.fillStyle = amb;
+        ctx.fillRect(0, 0, width, height);
+
+        // Rising Steam Clouds
+        for (const p of particles) {
+          p.wobble += p.wobbleSpeed;
+          p.x += p.vx + Math.sin(p.wobble) * 0.6;
+          p.y += p.vy;
+
+          const dx = p.x - mouse.x;
+          const dy = p.y - mouse.y;
+          const dist = Math.hypot(dx, dy);
+          if (dist < 110 && dist > 0) {
+            p.x += (dx / dist) * 2;
+            p.y += (dy / dist) * 2;
+          }
+
+          if (p.y < -p.size || p.x < -p.size || p.x > width + p.size) {
+            resetParticle(p);
+          }
+
+          const grad = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.size);
+          grad.addColorStop(0, `rgba(240, 205, 160, ${p.alpha * 0.85})`);
+          grad.addColorStop(0.4, `rgba(190, 135, 80, ${p.alpha * 0.45})`);
+          grad.addColorStop(1, "rgba(20, 16, 12, 0)");
+
+          ctx.fillStyle = grad;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+          ctx.fill();
+        }
+
+        // Glowing warm embers
+        for (const e of embers) {
+          e.y += e.vy;
+          e.x += e.vx;
+          if (e.y < -10) resetEmber(e);
+
+          ctx.fillStyle = `rgba(255, 180, 90, ${e.alpha})`;
+          ctx.beginPath();
+          ctx.arc(e.x, e.y, e.size, 0, Math.PI * 2);
+          ctx.fill();
+        }
+
+        animId = requestAnimationFrame(animate);
+      }
+      animId = requestAnimationFrame(animate);
+
+      return {
+        destroy: () => {
+          if (animId) cancelAnimationFrame(animId);
+          if (ro) ro.disconnect();
+          window.removeEventListener("resize", resize);
+          cleanupMouse();
+          canvas.remove();
+        }
+      };
+    },
+
+    // 14. Zen Bamboo & Mist (Sumi-e mist and tranquil floating petals)
+    "zen-mist": (el) => {
+      const { canvas, isFullPage } = prepareTarget(el);
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
+      const { mouse, cleanup: cleanupMouse } = setupMouseTracking(el, isFullPage);
+
+      let width = 0, height = 0;
+      let petals = [];
+      const COUNT = 32;
+
+      function resetPetal(p, fullReset = false) {
+        p.x = Math.random() * width;
+        p.y = fullReset ? Math.random() * height : -20;
+        p.size = 10 + Math.random() * 12;
+        p.speedY = 0.6 + Math.random() * 0.9;
+        p.speedX = (Math.random() - 0.5) * 0.6;
+        p.angle = Math.random() * Math.PI * 2;
+        p.spin = (Math.random() - 0.5) * 0.03;
+        p.isGreen = Math.random() > 0.35;
+      }
+
+      function resize() {
+        const rect = isFullPage ? { width: window.innerWidth, height: window.innerHeight } : el.getBoundingClientRect();
+        width = Math.max(1, Math.round(rect.width));
+        height = Math.max(1, Math.round(rect.height));
+        if (canvas.width !== width || canvas.height !== height) {
+          canvas.width = width;
+          canvas.height = height;
+        }
+        petals = [];
+        for (let i = 0; i < COUNT; i++) {
+          const p = {};
+          resetPetal(p, true);
+          petals.push(p);
+        }
+      }
+      resize();
+
+      const ro = (typeof ResizeObserver !== "undefined" && !isFullPage) ? new ResizeObserver(resize) : null;
+      if (ro) ro.observe(el);
+      window.addEventListener("resize", resize);
+
+      let animId = null;
+      function animate() {
+        if (!canvas.isConnected) {
+          if (ro) ro.disconnect();
+          window.removeEventListener("resize", resize);
+          cleanupMouse();
+          return;
+        }
+
+        // Serene Sumi-e dark ink wash
+        ctx.fillStyle = "#0c0f0d";
+        ctx.fillRect(0, 0, width, height);
+
+        // Soft jade mist wash
+        const mist = ctx.createRadialGradient(width * 0.5, 0, 10, width * 0.5, height * 0.5, width * 0.8);
+        mist.addColorStop(0, "rgba(55, 110, 75, 0.22)");
+        mist.addColorStop(1, "rgba(12, 15, 13, 0)");
+        ctx.fillStyle = mist;
+        ctx.fillRect(0, 0, width, height);
+
+        // Floating Bamboo Leaves
+        for (const p of petals) {
+          p.y += p.speedY;
+          p.x += p.speedX + Math.sin(p.angle) * 0.45;
+          p.angle += p.spin;
+
+          const dx = p.x - mouse.x;
+          const dy = p.y - mouse.y;
+          const dist = Math.hypot(dx, dy);
+          if (dist < 90 && dist > 0) {
+            p.x += (dx / dist) * 2;
+            p.y += (dy / dist) * 2;
+          }
+
+          if (p.y > height + 25) {
+            resetPetal(p);
+          }
+
+          ctx.save();
+          ctx.translate(p.x, p.y);
+          ctx.rotate(p.angle);
+
+          // Leaf body
+          ctx.fillStyle = p.isGreen ? "rgba(95, 205, 135, 0.85)" : "rgba(225, 240, 230, 0.88)";
+          ctx.beginPath();
+          ctx.ellipse(0, 0, p.size, p.size * 0.38, 0, 0, Math.PI * 2);
+          ctx.fill();
+
+          // Leaf center spine
+          ctx.strokeStyle = p.isGreen ? "rgba(40, 120, 70, 0.9)" : "rgba(160, 180, 170, 0.9)";
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.moveTo(-p.size * 0.9, 0);
+          ctx.lineTo(p.size * 0.9, 0);
+          ctx.stroke();
+
+          ctx.restore();
+        }
+
+        animId = requestAnimationFrame(animate);
+      }
+      animId = requestAnimationFrame(animate);
+
+      return {
+        destroy: () => {
+          if (animId) cancelAnimationFrame(animId);
+          if (ro) ro.disconnect();
+          window.removeEventListener("resize", resize);
+          cleanupMouse();
+          canvas.remove();
+        }
+      };
+    },
+
+    // 15. Boba Pearls (Floating buoyant boba tapioca pearls with gentle milk tea float)
+    "boba-pearls": (el) => {
+      const { canvas, isFullPage } = prepareTarget(el);
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
+      const { mouse, cleanup: cleanupMouse } = setupMouseTracking(el, isFullPage);
+
+      let width = 0, height = 0;
+      let pearls = [];
+      const COUNT = 26;
+
+      function resetPearl(p, fullReset = false) {
+        p.x = Math.random() * width;
+        p.y = fullReset ? Math.random() * height : height + 35;
+        p.radius = 12 + Math.random() * 18;
+        p.vy = -(0.5 + Math.random() * 0.9);
+        p.vx = (Math.random() - 0.5) * 0.4;
+        p.wobble = Math.random() * Math.PI * 2;
+      }
+
+      function resize() {
+        const rect = isFullPage ? { width: window.innerWidth, height: window.innerHeight } : el.getBoundingClientRect();
+        width = Math.max(1, Math.round(rect.width));
+        height = Math.max(1, Math.round(rect.height));
+        if (canvas.width !== width || canvas.height !== height) {
+          canvas.width = width;
+          canvas.height = height;
+        }
+        pearls = [];
+        for (let i = 0; i < COUNT; i++) {
+          const p = {};
+          resetPearl(p, true);
+          pearls.push(p);
+        }
+      }
+      resize();
+
+      const ro = (typeof ResizeObserver !== "undefined" && !isFullPage) ? new ResizeObserver(resize) : null;
+      if (ro) ro.observe(el);
+      window.addEventListener("resize", resize);
+
+      let animId = null;
+      function animate() {
+        if (!canvas.isConnected) {
+          if (ro) ro.disconnect();
+          window.removeEventListener("resize", resize);
+          cleanupMouse();
+          return;
+        }
+
+        // Warm Taro & Milk Tea Canvas
+        ctx.fillStyle = "#14101a";
+        ctx.fillRect(0, 0, width, height);
+
+        const glow = ctx.createRadialGradient(width * 0.4, height * 0.4, 20, width * 0.5, height * 0.5, width * 0.7);
+        glow.addColorStop(0, "rgba(168, 85, 247, 0.16)");
+        glow.addColorStop(1, "rgba(20, 16, 26, 0)");
+        ctx.fillStyle = glow;
+        ctx.fillRect(0, 0, width, height);
+
+        for (const p of pearls) {
+          p.wobble += 0.025;
+          p.x += p.vx + Math.sin(p.wobble) * 0.35;
+          p.y += p.vy;
+
+          const dx = p.x - mouse.x;
+          const dy = p.y - mouse.y;
+          const dist = Math.hypot(dx, dy);
+          if (dist < p.radius + 60 && dist > 0) {
+            p.x += (dx / dist) * 2.5;
+            p.y += (dy / dist) * 2.5;
+          }
+
+          if (p.y < -p.radius * 2) {
+            resetPearl(p);
+          }
+
+          // Translucent Boba pearl with rich caramel outer ring
+          const grad = ctx.createRadialGradient(
+            p.x - p.radius * 0.35,
+            p.y - p.radius * 0.35,
+            p.radius * 0.1,
+            p.x,
+            p.y,
+            p.radius
+          );
+          grad.addColorStop(0, "rgba(215, 175, 245, 0.7)");
+          grad.addColorStop(0.5, "rgba(85, 45, 30, 0.95)");
+          grad.addColorStop(1, "rgba(25, 12, 8, 1)");
+
+          ctx.fillStyle = grad;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+          ctx.fill();
+
+          // Outer glowing pearl rim
+          ctx.strokeStyle = "rgba(192, 132, 252, 0.55)";
+          ctx.lineWidth = 1.2;
+          ctx.stroke();
+
+          // Shiny Specular Reflection Dot
+          ctx.fillStyle = "rgba(255, 255, 255, 0.85)";
+          ctx.beginPath();
+          ctx.arc(p.x - p.radius * 0.35, p.y - p.radius * 0.35, p.radius * 0.22, 0, Math.PI * 2);
+          ctx.fill();
+        }
+
+        animId = requestAnimationFrame(animate);
+      }
+      animId = requestAnimationFrame(animate);
+
+      return {
+        destroy: () => {
+          if (animId) cancelAnimationFrame(animId);
+          if (ro) ro.disconnect();
+          window.removeEventListener("resize", resize);
+          cleanupMouse();
+          canvas.remove();
+        }
+      };
+    },
+
+    // 16. Architectural Blueprint (Clean isometric blueprint grid with responsive structural crosshairs)
+    "architectural-blueprint": (el) => {
+      const { canvas, isFullPage } = prepareTarget(el);
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
+      const { mouse, cleanup: cleanupMouse } = setupMouseTracking(el, isFullPage);
+
+      let width = 0, height = 0;
+      const GRID = 28;
+
+      function resize() {
+        const rect = isFullPage ? { width: window.innerWidth, height: window.innerHeight } : el.getBoundingClientRect();
+        width = Math.max(1, Math.round(rect.width));
+        height = Math.max(1, Math.round(rect.height));
+        if (canvas.width !== width || canvas.height !== height) {
+          canvas.width = width;
+          canvas.height = height;
+        }
+      }
+      resize();
+
+      const ro = (typeof ResizeObserver !== "undefined" && !isFullPage) ? new ResizeObserver(resize) : null;
+      if (ro) ro.observe(el);
+      window.addEventListener("resize", resize);
+
+      let animId = null;
+
+      function animate() {
+        if (!canvas.isConnected) {
+          if (ro) ro.disconnect();
+          window.removeEventListener("resize", resize);
+          cleanupMouse();
+          return;
+        }
+
+        // CAD Blueprint slate
+        ctx.fillStyle = "#090d14";
+        ctx.fillRect(0, 0, width, height);
+
+        // Minor grid lines
+        ctx.strokeStyle = "rgba(56, 160, 255, 0.16)";
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        for (let x = 0; x <= width; x += GRID) {
+          ctx.moveTo(x + 0.5, 0);
+          ctx.lineTo(x + 0.5, height);
+        }
+        for (let y = 0; y <= height; y += GRID) {
+          ctx.moveTo(0, y + 0.5);
+          ctx.lineTo(width, y + 0.5);
+        }
+        ctx.stroke();
+
+        // Major grid lines every 4 cells
+        ctx.strokeStyle = "rgba(56, 180, 255, 0.32)";
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        for (let x = 0; x <= width; x += GRID * 4) {
+          ctx.moveTo(x + 0.5, 0);
+          ctx.lineTo(x + 0.5, height);
+        }
+        for (let y = 0; y <= height; y += GRID * 4) {
+          ctx.moveTo(0, y + 0.5);
+          ctx.lineTo(width, y + 0.5);
+        }
+        ctx.stroke();
+
+        // Interactive Architectural Crosshairs & coordinate nodes near mouse
+        const snapX = Math.round(mouse.x / GRID) * GRID;
+        const snapY = Math.round(mouse.y / GRID) * GRID;
+
+        if (mouse.x > 0 && mouse.y > 0) {
+          // Crosshair lines
+          ctx.strokeStyle = "rgba(80, 200, 255, 0.85)";
+          ctx.lineWidth = 1.2;
+          ctx.beginPath();
+          ctx.moveTo(snapX, Math.max(0, snapY - 50));
+          ctx.lineTo(snapX, Math.min(height, snapY + 50));
+          ctx.moveTo(Math.max(0, snapX - 50), snapY);
+          ctx.lineTo(Math.min(width, snapX + 50), snapY);
+          ctx.stroke();
+
+          // Golden ratio dimension circles
+          ctx.strokeStyle = "rgba(80, 200, 255, 0.75)";
+          ctx.beginPath();
+          ctx.arc(snapX, snapY, 10, 0, Math.PI * 2);
+          ctx.arc(snapX, snapY, 22, 0, Math.PI * 2);
+          ctx.stroke();
+
+          // Coordinate readout
+          ctx.font = "bold 9.5px 'JetBrains Mono', monospace";
+          ctx.fillStyle = "#ffffff";
+          ctx.fillText(`CAD [${snapX}, ${snapY}]`, snapX + 14, snapY - 14);
+        }
+
+        animId = requestAnimationFrame(animate);
+      }
+      animId = requestAnimationFrame(animate);
+
+      return {
+        destroy: () => {
+          if (animId) cancelAnimationFrame(animId);
+          if (ro) ro.disconnect();
+          window.removeEventListener("resize", resize);
+          cleanupMouse();
+          canvas.remove();
+        }
+      };
     }
   };
 
@@ -1437,6 +1923,10 @@ const InteractiveBackgrounds = (() => {
   function resolveEngineId(idOrString) {
     if (!idOrString) return null;
     const s = String(idOrString).toLowerCase();
+    if (s.includes("coffee") || s.includes("steam") || s.includes("cortado") || s.includes("roast")) return "coffee-steam";
+    if (s.includes("zen") || s.includes("panda") || s.includes("bamboo") || s.includes("mist")) return "zen-mist";
+    if (s.includes("boba") || s.includes("pearl") || s.includes("taro")) return "boba-pearls";
+    if (s.includes("architect") || s.includes("blueprint") || s.includes("bauhaus")) return "architectural-blueprint";
     if (s.includes("repulsion")) return "repulsion-grid";
     if (s.includes("chromatic") || s.includes("laser")) return "chromatic-laser";
     if (s.includes("cyber") || s.includes("manga")) return "cyber-grid";
@@ -1491,6 +1981,16 @@ const InteractiveBackgrounds = (() => {
         targetEl.style.zIndex = orig.zIndex;
       } else {
         targetEl.style.removeProperty("z-index");
+      }
+      if (orig.backgroundColor) {
+        targetEl.style.backgroundColor = orig.backgroundColor;
+      } else {
+        targetEl.style.removeProperty("background-color");
+      }
+      if (orig.backgroundImage) {
+        targetEl.style.backgroundImage = orig.backgroundImage;
+      } else {
+        targetEl.style.removeProperty("background-image");
       }
       originalStylesMap.delete(targetEl);
     }

@@ -22,12 +22,12 @@ const MEDIA_TEMPLATES = {
   align-items: center;
   justify-content: center;
   overflow: hidden;
-  background: rgba(0, 0, 0, 0.4);
+  background: #09090b;
 }
 .media-container video {
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: var(--media-sizing, contain);
   pointer-events: auto;
 }
 .media-controls {
@@ -99,160 +99,12 @@ const MEDIA_TEMPLATES = {
 }`
   },
 
-  DOCUMENT: {
-    id: "media-document",
-    name: "PDF & Document Showcase",
-    html: `<div class="doc-card-container">
-  <div class="doc-badge-card">
-    <div class="doc-icon-wrapper">
-      <span id="doc-icon">📄</span>
-    </div>
-    <div class="doc-details">
-      <div id="doc-title" class="doc-title">Document Attachment</div>
-      <div id="doc-meta" class="doc-meta">PDF / Document File</div>
-    </div>
-    <div class="doc-actions">
-      <a id="doc-open-btn" class="doc-btn primary" target="_blank" rel="noopener noreferrer">Open & View</a>
-      <a id="doc-download-btn" class="doc-btn secondary" download>Download</a>
-    </div>
-  </div>
-</div>`,
-    css: `.doc-card-container {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(10, 10, 15, 0.65);
-  backdrop-filter: blur(8px);
-  padding: 16px;
-  box-sizing: border-box;
-  font-family: -apple-system, BlinkMacSystemFont, "Inter", sans-serif;
-}
-.doc-badge-card {
-  background: #ffffff;
-  color: #18181b;
-  border-radius: 12px;
-  padding: 16px 20px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  text-align: center;
-  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.35);
-  max-width: 320px;
-  width: 100%;
-  border: 1px solid rgba(255, 255, 255, 0.4);
-  animation: doc-card-in 0.25s ease-out;
-}
-@keyframes doc-card-in {
-  from { opacity: 0; transform: translateY(8px) scale(0.96); }
-  to { opacity: 1; transform: translateY(0) scale(1); }
-}
-.doc-icon-wrapper {
-  font-size: 32px;
-  margin-bottom: 8px;
-  background: #fef3c7;
-  width: 54px;
-  height: 54px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.doc-title {
-  font-weight: 700;
-  font-size: 14px;
-  color: #0f172a;
-  margin-bottom: 4px;
-  word-break: break-word;
-}
-.doc-meta {
-  font-size: 11px;
-  color: #64748b;
-  margin-bottom: 14px;
-}
-.doc-actions {
-  display: flex;
-  gap: 8px;
-  width: 100%;
-}
-.doc-btn {
-  flex: 1;
-  padding: 8px 12px;
-  border-radius: 6px;
-  font-size: 11px;
-  font-weight: 600;
-  text-decoration: none;
-  text-align: center;
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-.doc-btn.primary {
-  background: #b8410e;
-  color: #ffffff;
-  border: 1px solid #b8410e;
-}
-.doc-btn.primary:hover {
-  background: #9a3412;
-}
-.doc-btn.secondary {
-  background: #f1f5f9;
-  color: #334155;
-  border: 1px solid #cbd5e1;
-}
-.doc-btn.secondary:hover {
-  background: #e2e8f0;
-}`,
-    js: `function run(canvas, img, config, root, host) {
-  const title = root.querySelector("#doc-title");
-  const meta = root.querySelector("#doc-meta");
-  const openBtn = root.querySelector("#doc-open-btn");
-  const downloadBtn = root.querySelector("#doc-download-btn");
-  const icon = root.querySelector("#doc-icon");
-
-  const url = config && (config.attachmentUrl || config.url);
-  const fileName = config && (config.fileName || "document.pdf");
-  const mimeType = config && config.mimeType;
-
-  if (title) title.textContent = fileName;
-  if (meta) {
-    if (fileName.toLowerCase().endsWith(".pdf") || mimeType === "application/pdf") {
-      meta.textContent = "PDF Document";
-      if (icon) icon.textContent = "📄";
-    } else if (fileName.match(/\\.(doc|docx)$/i)) {
-      meta.textContent = "Word Document";
-      if (icon) icon.textContent = "📝";
-    } else {
-      meta.textContent = "Attached Document";
-      if (icon) icon.textContent = "📁";
-    }
-  }
-
-  if (url) {
-    if (openBtn) openBtn.href = url;
-    if (downloadBtn) {
-      downloadBtn.href = url;
-      downloadBtn.download = fileName;
-    }
-  }
-
-  return {
-    onPointerMove(x, y) {},
-    onClick(x, y) {},
-    resize(w, h) {},
-    destroy() {}
-  };
-}`
-  },
 
   IMAGE_GIF: {
     id: "media-image-gif",
     name: "Image & Animated GIF Overlay",
     html: `<div class="gif-overlay-container">
   <img id="overlay-gif-img" class="overlay-img" src="" alt="Overlay media" />
-  <div id="toggle-layer-btn" class="gif-badge">GIF / Image Layer</div>
 </div>`,
     css: `.gif-overlay-container {
   position: absolute;
@@ -263,29 +115,14 @@ const MEDIA_TEMPLATES = {
   align-items: center;
   justify-content: center;
   overflow: hidden;
-  background: transparent;
+  background: #09090b;
 }
 .overlay-img {
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: var(--media-sizing, contain);
   transition: opacity 0.3s ease;
   pointer-events: auto;
-}
-.gif-badge {
-  position: absolute;
-  top: 10px;
-  left: 10px;
-  background: rgba(18, 18, 24, 0.85);
-  color: #fff;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.05em;
-  padding: 4px 8px;
-  border-radius: 4px;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  backdrop-filter: blur(6px);
-  pointer-events: none;
 }`,
     js: `function run(canvas, img, config, root, host) {
   const overlayImg = root.querySelector("#overlay-gif-img");
@@ -354,7 +191,6 @@ const STARTER_TEMPLATE = {
 
 const GLOBAL_TEMPLATES = [
   MEDIA_TEMPLATES.VIDEO,
-  MEDIA_TEMPLATES.DOCUMENT,
   MEDIA_TEMPLATES.IMAGE_GIF,
   STARTER_TEMPLATE
 ];
@@ -362,24 +198,19 @@ const GLOBAL_TEMPLATES = [
 const WATER_REVEAL_TEMPLATE = STARTER_TEMPLATE;
 
 // Helper to construct self-contained rich media interaction objects
-function createMediaInteraction({ name, fileDataUrl, fileUrl, fileName, mimeType, type }) {
+function createMediaInteraction({ name, fileDataUrl, fileUrl, fileName, mimeType, type, sizingMode = "contain" }) {
   const url = fileDataUrl || fileUrl;
-  const isVideo = type === "video" || (mimeType && mimeType.startsWith("video/")) || (fileName && fileName.match(/\\.(mp4|webm|mov)$/i));
-  const isPdfOrDoc = type === "pdf" || type === "document" || (mimeType && (mimeType.includes("pdf") || mimeType.includes("word") || mimeType.includes("document"))) || (fileName && fileName.match(/\\.(pdf|docx?|txt|md)$/i));
-  
-  const baseTmpl = isVideo ? MEDIA_TEMPLATES.VIDEO : (isPdfOrDoc ? MEDIA_TEMPLATES.DOCUMENT : MEDIA_TEMPLATES.IMAGE_GIF);
-  
-  // Inject the actual media URL directly into HTML/JS so it runs standalone everywhere
+  const isVideo = type === "video" || (mimeType && mimeType.startsWith("video/")) || (fileName && fileName.match(/\.(mp4|webm|mov)$/i));
+
+  const baseTmpl = isVideo ? MEDIA_TEMPLATES.VIDEO : MEDIA_TEMPLATES.IMAGE_GIF;
+
+  // Inject the actual media URL and sizing mode directly into HTML/CSS/JS
   let customHtml = baseTmpl.html;
+  let customCss = baseTmpl.css.replace(/var\(--media-sizing,\s*contain\)/g, sizingMode);
   let customJs = baseTmpl.js;
-  
+
   if (isVideo) {
     customHtml = customHtml.replace('<source src=""', `<source src="${url}"`);
-  } else if (isPdfOrDoc) {
-    customHtml = customHtml
-      .replace('id="doc-title" class="doc-title">Document Attachment</div>', `id="doc-title" class="doc-title">${fileName || "Attached Document"}</div>`)
-      .replace('id="doc-open-btn" class="doc-btn primary"', `id="doc-open-btn" class="doc-btn primary" href="${url}"`)
-      .replace('id="doc-download-btn" class="doc-btn secondary"', `id="doc-download-btn" class="doc-btn secondary" href="${url}" download="${fileName || 'document'}"`);
   } else {
     customHtml = customHtml.replace('<img id="overlay-gif-img" class="overlay-img" src=""', `<img id="overlay-gif-img" class="overlay-img" src="${url}"`);
   }
@@ -387,21 +218,47 @@ function createMediaInteraction({ name, fileDataUrl, fileUrl, fileName, mimeType
   return {
     name: name || fileName || "Media Attachment",
     html: customHtml,
-    css: baseTmpl.css,
+    css: customCss,
     js: customJs,
     attachment: {
-      type: isVideo ? "video" : (isPdfOrDoc ? "document" : "image"),
+      type: isVideo ? "video" : "image",
       url: url,
       fileName: fileName || "file",
-      mimeType: mimeType || ""
+      mimeType: mimeType || "",
+      sizingMode: sizingMode
     }
   };
+}
+
+// Helper to dynamically update the sizing mode of any interaction
+function updateInteractionSizing(interaction, newSizingMode) {
+  if (!interaction || !newSizingMode) return interaction;
+  const validModes = ["contain", "fill", "cover", "none"];
+  const mode = validModes.includes(newSizingMode) ? newSizingMode : "contain";
+
+  if (!interaction.attachment) {
+    interaction.attachment = {};
+  }
+  interaction.attachment.sizingMode = mode;
+
+  // Update object-fit in custom CSS if present
+  let css = interaction.css || "";
+  if (/object-fit\s*:/i.test(css)) {
+    css = css.replace(/object-fit\s*:\s*[^;!]+(?:\s*!important)?/gi, `object-fit: ${mode} !important`);
+  } else {
+    css += `\n.overlay-img, video, .media-container video, img { object-fit: ${mode} !important; }`;
+  }
+  css = css.replace(/var\(--media-sizing,\s*[^)]+\)/gi, mode);
+  interaction.css = css;
+
+  return interaction;
 }
 
 if (typeof window !== "undefined") {
   window.MEDIA_TEMPLATES = MEDIA_TEMPLATES;
   window.GLOBAL_TEMPLATES = GLOBAL_TEMPLATES;
   window.createMediaInteraction = createMediaInteraction;
+  window.updateInteractionSizing = updateInteractionSizing;
   window.__defaultInteraction = function (canvas, img, config) {
     const factory = new Function(
       "canvas",
@@ -412,4 +269,5 @@ if (typeof window !== "undefined") {
     return factory(canvas, img, config);
   };
 }
+
 
